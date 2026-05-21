@@ -12,7 +12,9 @@ const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 type ServerState = "checking" | "starting" | "failed" | "ready";
 type Phase = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
 
-// ── Health check — wakes Render's free-tier server before connecting ────────
+type MiniRow   = { rank: number; clerk_id: string; username: string; total_score: number };
+type LiveScore = { id: number; rank: number; name: string; color: string; pct: string };
+
 type HealthResult = { ok: true } | { ok: false; error: string };
 
 async function pingHealth(signal: AbortSignal): Promise<HealthResult> {
@@ -29,26 +31,43 @@ export default function JoinPage() {
   const { user, isLoaded } = useUser();
   const router              = useRouter();
 
+  // ── Profile ──────────────────────────────────────────────────────────────
   const [profileReady, setProfileReady] = useState(false);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(DEFAULT_AVATAR);
+  const [weeklyRank,   setWeeklyRank]   = useState<number | null>(null);
+  const [weeklyScore,  setWeeklyScore]  = useState(0);
+  const avatarConfigRef = useRef<AvatarConfig>(DEFAULT_AVATAR);
+  avatarConfigRef.current = avatarConfig;
 
+  // ── Server health ────────────────────────────────────────────────────────
   const [serverState, setServerState] = useState<ServerState>("checking");
-  const [retryKey, setRetryKey]       = useState(0);
+  const [retryKey,    setRetryKey]    = useState(0);
   const [healthError, setHealthError] = useState<string | null>(null);
 
-  const [phase, setPhase]         = useState<Phase>("joining");
-  const [myColor, setMyColor]     = useState("#FF2D78");
+  // ── Game state ───────────────────────────────────────────────────────────
+  const [phase,        setPhase]   = useState<Phase>("joining");
+  const [myColor,      setMyColor] = useState("#FF2D78");
   const [respawnCount, setRespawn] = useState(0);
-  const [rank, setRank]           = useState<number | null>(null);
-  const [pct, setPct]             = useState("0");
-  const [winnerName, setWinner]   = useState<string | null>(null);
+  const [rank,         setRank]    = useState<number | null>(null);
+  const [pct,          setPct]     = useState("0");
+  const [winnerName,   setWinner]  = useState<string | null>(null);
 
+  // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
+  const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
+  const [boardCountdown, setBoardCountdown] = useState(30);
+
+  // ── Mode C: spectator ────────────────────────────────────────────────────
+  const [liveScores, setLiveScores] = useState<LiveScore[]>([]);
+  const [gameEnding, setGameEnding] = useState(false);
+
+  // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
   const mySlotRef    = useRef<number | null>(null);
   const respawnTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef     = useRef<Phase>("joining");
   phaseRef.current   = phase;
 
+  // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (isLoaded && !user) router.replace("/login");
   }, [isLoaded, user, router]);
@@ -59,18 +78,20 @@ export default function JoinPage() {
 
     fetch("/api/profile/me")
       .then(r => r.json())
-      .then(({ player }) => {
+      .then(({ player, weeklyRank: wr, weeklyScore: ws }) => {
         if (!player?.avatar_config) {
           router.replace("/setup-profile");
           return;
         }
         setAvatarConfig(player.avatar_config as AvatarConfig);
+        setWeeklyRank(wr ?? null);
+        setWeeklyScore(ws ?? 0);
         setProfileReady(true);
       })
-      .catch(() => setProfileReady(true)); // On error, proceed without avatar
+      .catch(() => setProfileReady(true));
   }, [isLoaded, user, router]);
 
-  // ── Phase 1: health check ─────────────────────────────────────────────────
+  // ── Phase 1: health check ────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded || !user || !profileReady) return;
     setServerState("checking");
@@ -105,39 +126,43 @@ export default function JoinPage() {
     };
   }, [isLoaded, user, profileReady, retryKey]);
 
-  // ── Phase 2: Socket.io ────────────────────────────────────────────────────
+  // ── Phase 2: Socket.io ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded || !user || serverState !== "ready") return;
 
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
-    socket.on("connect", () => {
+    const emitJoin = () => {
       socket.emit("lobby-join", {
         userId:       user.id,
         username:     user.username ?? user.firstName ?? "Player",
         avatarUrl:    user.imageUrl ?? null,
-        avatarConfig: avatarConfig,
+        avatarConfig: avatarConfigRef.current,
       });
-    });
+    };
 
+    socket.on("connect",       emitJoin);
     socket.on("connect_error", () => setServerState("failed"));
 
     socket.on("lobby-join-ack", ({ slotId, color }: { slotId: number; color: string }) => {
       mySlotRef.current = slotId;
       setMyColor(color);
+      setLiveScores([]);
+      setGameEnding(false);
       setPhase("waiting");
     });
 
-    socket.on("lobby-full",       () => setPhase("full"));
-    socket.on("game-in-progress", () => setPhase("in-progress"));
+    socket.on("lobby-full",       () => { setGameEnding(false); setPhase("full");        });
+    socket.on("game-in-progress", () => { setGameEnding(false); setPhase("in-progress"); });
 
     socket.on("game-start", () => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
       setPhase("playing");
     });
 
-    socket.on("leaderboard-update", (board: { id: number; rank: number; pct: string }[]) => {
+    socket.on("leaderboard-update", (board: LiveScore[]) => {
+      setLiveScores(board);
       const me = board.find(p => p.id === mySlotRef.current);
       if (me) { setRank(me.rank); setPct(me.pct); }
     });
@@ -156,8 +181,22 @@ export default function JoinPage() {
 
     socket.on("game-end", ({ winner }: { winner: { name: string } | null }) => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
-      setWinner(winner?.name ?? null);
-      setPhase("game-over");
+
+      const wasSpectating =
+        phaseRef.current === "full" || phaseRef.current === "in-progress";
+
+      if (wasSpectating) {
+        // Auto-rejoin after server lobby reset (8s after game-end + buffer)
+        setGameEnding(true);
+        setTimeout(() => {
+          setGameEnding(false);
+          setLiveScores([]);
+          emitJoin();
+        }, 9_000);
+      } else {
+        setWinner(winner?.name ?? null);
+        setPhase("game-over");
+      }
     });
 
     return () => {
@@ -165,6 +204,32 @@ export default function JoinPage() {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
     };
   }, [isLoaded, user, serverState]);
+
+  // ── Mini-leaderboard polling (Mode A only) ───────────────────────────────
+  useEffect(() => {
+    if (phase !== "waiting") return;
+
+    const fetchBoard = () => {
+      fetch("/api/leaderboard/weekly")
+        .then(r => r.json())
+        .then(({ board, myRank, myScore }) => {
+          setMiniBoard(board ?? []);
+          if (myRank  != null) setWeeklyRank(myRank);
+          if (myScore != null) setWeeklyScore(myScore);
+          setBoardCountdown(30);
+        })
+        .catch(() => {});
+    };
+
+    fetchBoard();
+    const pollId      = setInterval(fetchBoard, 30_000);
+    const countdownId = setInterval(() => setBoardCountdown(c => Math.max(0, c - 1)), 1_000);
+
+    return () => {
+      clearInterval(pollId);
+      clearInterval(countdownId);
+    };
+  }, [phase]);
 
   const sendDir = useCallback((dir: string) => {
     if (phaseRef.current !== "playing") return;
@@ -176,6 +241,9 @@ export default function JoinPage() {
   /* ── Render ────────────────────────────────────────────────────────────── */
   if (!isLoaded || !user || !profileReady) return <Centered><Spinner /></Centered>;
 
+  const name = user.username ?? user.firstName ?? "Player";
+
+  // ── Server loading states ─────────────────────────────────────────────
   if (serverState === "checking") {
     return <Centered><Spinner /><Muted>Connecting to game server…</Muted></Centered>;
   }
@@ -199,12 +267,8 @@ export default function JoinPage() {
             {healthError}
           </p>
         )}
-        <a
-          href={`${GAME_SERVER}/health`}
-          target="_blank"
-          rel="noreferrer"
-          className="font-boogaloo text-mm-cyan text-sm underline underline-offset-2"
-        >
+        <a href={`${GAME_SERVER}/health`} target="_blank" rel="noreferrer"
+           className="font-boogaloo text-mm-cyan text-sm underline underline-offset-2">
           Wake the server manually ↗
         </a>
         <button
@@ -218,57 +282,264 @@ export default function JoinPage() {
     );
   }
 
-  if (phase === "joining")     return <Centered><Spinner /><Muted>Joining…</Muted></Centered>;
-  if (phase === "full")        return <Centered><Headline color="#FF6D00">Game Full</Headline><Muted>All 4 slots are taken. Try again next round.</Muted></Centered>;
-  if (phase === "in-progress") return <Centered><Headline color="#00E5FF">Game In Progress</Headline><Muted>Wait for the current round to finish, then scan again.</Muted></Centered>;
-  if (phase === "game-over")   return (
-    <Centered>
-      <Headline color="#FF6D00">GAME OVER</Headline>
-      {winnerName && <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>}
-      <Muted>Scan the QR code again to join the next round.</Muted>
-    </Centered>
-  );
+  if (phase === "joining") return <Centered><Spinner /><Muted>Joining…</Muted></Centered>;
 
+  // ── MODE A: Lobby — waiting for game to start ─────────────────────────
   if (phase === "waiting") {
-    const name = user.username ?? user.firstName ?? "Player";
+    return (
+      <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
+
+        {/* Avatar + identity */}
+        <div className="flex flex-col items-center gap-3 mb-5">
+          <div
+            className="rounded-full flex items-center justify-center"
+            style={{
+              width:      "9rem",
+              height:     "9rem",
+              background: `${myColor}18`,
+              border:     `3px solid ${myColor}`,
+              boxShadow:  `0 0 48px ${myColor}66`,
+            }}
+          >
+            <PlayerAvatar config={{ ...avatarConfig, color: myColor }} size={104} />
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            <h1 className="font-marker text-2xl text-white">{name}</h1>
+            {weeklyRank != null && (
+              <span
+                className="font-boogaloo text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  background: `${myColor}22`,
+                  color:      myColor,
+                  border:     `1px solid ${myColor}55`,
+                }}
+              >
+                #{weeklyRank} this week
+              </span>
+            )}
+          </div>
+
+          <p className="font-boogaloo text-xl" style={{ color: myColor }}>
+            YOU&apos;RE IN! 🎨
+          </p>
+          <Muted>Waiting for host to start…</Muted>
+        </div>
+
+        {/* Divider */}
+        <div className="w-full border-t border-white/10 mb-5" />
+
+        {/* Mini-leaderboard */}
+        <div className="w-full flex-1">
+          <div className="flex justify-between items-center mb-3">
+            <span className="font-marker text-xs text-white/35 tracking-widest">
+              THIS WEEK
+            </span>
+            <span className="font-boogaloo text-xs text-white/20">
+              updates in {boardCountdown}s
+            </span>
+          </div>
+
+          {miniBoard.length === 0 ? (
+            <p className="text-center font-boogaloo text-white/25 text-sm py-4">
+              No scores yet this week — be the first!
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {miniBoard.map((row, i) => {
+                const isMe = row.clerk_id === user.id;
+                return (
+                  <div
+                    key={row.clerk_id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    style={{
+                      background: isMe ? `${myColor}18` : "rgba(255,255,255,.03)",
+                      border:     `1px solid ${isMe ? myColor : "rgba(255,255,255,.06)"}`,
+                    }}
+                  >
+                    <span
+                      className="font-marker text-sm w-7 text-center flex-shrink-0"
+                      style={{ color: i === 0 ? "#FFD600" : "rgba(255,255,255,.35)" }}
+                    >
+                      {i === 0 ? "👑" : `#${i + 1}`}
+                    </span>
+                    <span className="font-boogaloo text-white text-sm flex-1 truncate">
+                      {row.username}{isMe ? " (you)" : ""}
+                    </span>
+                    <span
+                      className="font-marker text-sm flex-shrink-0"
+                      style={{ color: isMe ? myColor : "rgba(255,255,255,.5)" }}
+                    >
+                      {row.total_score}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Show caller's entry below top 5 if they're ranked lower */}
+              {weeklyRank != null && weeklyRank > 5 && (
+                <>
+                  <div className="text-center text-white/20 font-boogaloo text-xs py-0.5">
+                    • • •
+                  </div>
+                  <div
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    style={{
+                      background: `${myColor}18`,
+                      border:     `1px solid ${myColor}`,
+                    }}
+                  >
+                    <span
+                      className="font-marker text-sm w-7 text-center flex-shrink-0"
+                      style={{ color: myColor }}
+                    >
+                      #{weeklyRank}
+                    </span>
+                    <span className="font-boogaloo text-white text-sm flex-1 truncate">
+                      {name} (you)
+                    </span>
+                    <span
+                      className="font-marker text-sm flex-shrink-0"
+                      style={{ color: myColor }}
+                    >
+                      {weeklyScore}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MODE C: Spectator — game full or already in progress ──────────────
+  if (phase === "full" || phase === "in-progress") {
+    return (
+      <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-10 pb-6">
+
+        {/* Status header */}
+        <div className="flex flex-col items-center gap-3 mb-6 text-center">
+          {gameEnding ? (
+            <>
+              <p
+                className="font-marker text-3xl"
+                style={{ color: "#00E5FF", textShadow: "0 0 20px #00E5FF" }}
+              >
+                GAME OVER!
+              </p>
+              <Muted>Getting you a spot…</Muted>
+              <Spinner />
+            </>
+          ) : (
+            <>
+              <p
+                className="font-marker text-2xl"
+                style={{ color: "#FF6D00", textShadow: "0 0 16px #FF6D0066" }}
+              >
+                GAME IN PROGRESS
+              </p>
+              <Muted>
+                {phase === "full"
+                  ? "All 4 spots are taken."
+                  : "A game is already running."}
+              </Muted>
+              <p className="font-boogaloo text-white/50 text-sm">
+                You&apos;ll join the next round automatically.
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Live scores */}
+        {liveScores.length > 0 && !gameEnding && (
+          <>
+            <div className="w-full border-t border-white/10 mb-5" />
+            <div className="w-full">
+              <p className="font-marker text-xs text-white/35 tracking-widest mb-3">
+                LIVE SCORES
+              </p>
+              <div className="flex flex-col gap-2">
+                {liveScores.map((p, i) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    style={{
+                      background: `${p.color}10`,
+                      border:     `1px solid ${p.color}44`,
+                    }}
+                  >
+                    <span
+                      className="font-marker text-sm w-7 text-center flex-shrink-0"
+                      style={{ color: i === 0 ? "#FFD600" : "rgba(255,255,255,.35)" }}
+                    >
+                      {i === 0 ? "👑" : `#${i + 1}`}
+                    </span>
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{
+                        background: p.color,
+                        boxShadow:  `0 0 8px ${p.color}`,
+                      }}
+                    />
+                    <span className="font-boogaloo text-white text-sm flex-1 truncate">
+                      {p.name}
+                    </span>
+                    <span
+                      className="font-marker text-sm flex-shrink-0"
+                      style={{ color: p.color }}
+                    >
+                      {p.pct}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ── Game over (active player who just finished a round) ───────────────
+  if (phase === "game-over") {
     return (
       <Centered>
-        {/* Avatar with color glow ring */}
-        <div
-          className="rounded-full flex items-center justify-center"
-          style={{
-            width:     "9rem",
-            height:    "9rem",
-            background: `${myColor}18`,
-            border:    `3px solid ${myColor}`,
-            boxShadow: `0 0 48px ${myColor}66`,
-          }}
-        >
-          <PlayerAvatar config={{ ...avatarConfig, color: myColor }} size={104} />
-        </div>
-        <h1 className="font-marker text-2xl text-white">{name}</h1>
-        <p className="font-boogaloo text-xl" style={{ color: myColor }}>YOU&apos;RE IN! 🎨</p>
-        <Muted>Waiting for host to start…</Muted>
+        <Headline color="#FF6D00">GAME OVER</Headline>
+        {winnerName && (
+          <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
+        )}
+        <Muted>Scan the QR code again to join the next round.</Muted>
       </Centered>
     );
   }
 
-  /* ── Playing / Dead — Joystick ───────────────────────────────────────── */
-  const name = user.username ?? user.firstName ?? "Player";
-
+  // ── MODE B: Controller — game running, player active ──────────────────
   return (
     <div
       className="fixed inset-0 flex flex-col"
-      style={{ background: "#0d0d0d", touchAction: "none",
-               userSelect: "none", WebkitUserSelect: "none" } as React.CSSProperties}
+      style={{
+        background:       "#0d0d0d",
+        touchAction:      "none",
+        userSelect:       "none",
+        WebkitUserSelect: "none",
+      } as React.CSSProperties}
     >
       {/* HUD */}
-      <div className="flex items-center justify-between px-4 py-2 flex-shrink-0"
-        style={{ background: "rgba(0,0,0,.65)", borderBottom: `2px solid ${myColor}` }}>
-        <span className="font-marker text-lg" style={{ color: myColor }}>{name}</span>
-        <span className="font-boogaloo text-gray-300 text-sm">
-          <span className="font-marker" style={{ color: myColor }}>#{rank ?? "–"}</span>
-          &nbsp;|&nbsp;{pct}%
+      <div
+        className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+        style={{ background: "rgba(0,0,0,.65)", borderBottom: `2px solid ${myColor}` }}
+      >
+        <div
+          className="w-4 h-4 rounded-full flex-shrink-0"
+          style={{ background: myColor, boxShadow: `0 0 10px ${myColor}` }}
+        />
+        <span className="font-marker text-lg flex-1 truncate" style={{ color: myColor }}>
+          {name}
+        </span>
+        <span className="font-boogaloo text-white/60 text-sm flex-shrink-0">
+          {pct}%
         </span>
       </div>
 
@@ -280,10 +551,18 @@ export default function JoinPage() {
       {/* Death overlay */}
       {phase === "dead" && (
         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-4 z-10">
-          <p className="font-marker text-4xl"
-            style={{ color: "#FF6D00", textShadow: "0 0 20px #FF6D00" }}>SPRAYED!</p>
+          <p
+            className="font-marker text-4xl"
+            style={{ color: "#FF6D00", textShadow: "0 0 20px #FF6D00" }}
+          >
+            SPRAYED!
+          </p>
           <p className="font-boogaloo text-xl text-gray-300">
-            Back in <span className="font-marker" style={{ color: "#FF6D00" }}>{respawnCount}</span>s…
+            Back in{" "}
+            <span className="font-marker" style={{ color: "#FF6D00" }}>
+              {respawnCount}
+            </span>
+            s…
           </p>
         </div>
       )}
@@ -291,16 +570,16 @@ export default function JoinPage() {
   );
 }
 
-/* ── Joystick component ─────────────────────────────────────────────────── */
+/* ── Joystick ───────────────────────────────────────────────────────────── */
 
-const BASE_R  = 100;  // base radius  (200px diameter)
-const THUMB_R = 40;   // thumb radius (80px  diameter)
-const DEAD_Z  = 18;   // dead-zone before direction registers
-const MAX_TRAVEL = BASE_R - THUMB_R;   // how far thumb can move from center
+const BASE_R     = 100;
+const THUMB_R    = 40;
+const DEAD_Z     = 18;
+const MAX_TRAVEL = BASE_R - THUMB_R;
 
 function Joystick({ color, onDirection }: { color: string; onDirection: (dir: string) => void }) {
-  const baseRef    = useRef<HTMLDivElement>(null);
-  const dirRef     = useRef<string | null>(null);
+  const baseRef             = useRef<HTMLDivElement>(null);
+  const dirRef              = useRef<string | null>(null);
   const [pos, setPos]       = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
 
@@ -314,23 +593,17 @@ function Joystick({ color, onDirection }: { color: string; onDirection: (dir: st
     };
 
     const move = (touch: Touch) => {
-      const c  = getCenter();
-      const dx = touch.clientX - c.x;
-      const dy = touch.clientY - c.y;
+      const c    = getCenter();
+      const dx   = touch.clientX - c.x;
+      const dy   = touch.clientY - c.y;
       const dist = Math.hypot(dx, dy);
 
-      // Clamp thumb within base circle
       const clamped = Math.min(dist, MAX_TRAVEL);
       const angle   = Math.atan2(dy, dx);
       setPos({ x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped });
 
-      if (dist < DEAD_Z) {
-        dirRef.current = null;
-        return;
-      }
+      if (dist < DEAD_Z) { dirRef.current = null; return; }
 
-      // Snap to 4 directions — use angle ranges matching the user's spec
-      // (atan2 with inverted y gives mathematical angles: right=0, up=90, left=180, down=270)
       const deg = ((Math.atan2(-dy, dx) * 180) / Math.PI + 360) % 360;
       const newDir =
         deg >= 315 || deg < 45  ? "right" :
@@ -338,29 +611,12 @@ function Joystick({ color, onDirection }: { color: string; onDirection: (dir: st
         deg >= 135 && deg < 225 ? "left"  :
                                   "down";
 
-      if (newDir !== dirRef.current) {
-        dirRef.current = newDir;
-        onDirection(newDir);
-      }
+      if (newDir !== dirRef.current) { dirRef.current = newDir; onDirection(newDir); }
     };
 
-    const onStart = (e: TouchEvent) => {
-      e.preventDefault();
-      setActive(true);
-      move(e.touches[0]);
-    };
-
-    const onMove = (e: TouchEvent) => {
-      e.preventDefault();
-      move(e.touches[0]);
-    };
-
-    const onEnd = (e: TouchEvent) => {
-      e.preventDefault();
-      setActive(false);
-      setPos({ x: 0, y: 0 });
-      dirRef.current = null;
-    };
+    const onStart  = (e: TouchEvent) => { e.preventDefault(); setActive(true);  move(e.touches[0]); };
+    const onMove   = (e: TouchEvent) => { e.preventDefault(); move(e.touches[0]); };
+    const onEnd    = (e: TouchEvent) => { e.preventDefault(); setActive(false); setPos({ x: 0, y: 0 }); dirRef.current = null; };
 
     base.addEventListener("touchstart",  onStart, { passive: false });
     base.addEventListener("touchmove",   onMove,  { passive: false });
@@ -391,19 +647,18 @@ function Joystick({ color, onDirection }: { color: string; onDirection: (dir: st
         flexShrink:   0,
       }}
     >
-      {/* Thumb */}
       <div
         style={{
-          width:        THUMB_R * 2,
-          height:       THUMB_R * 2,
-          borderRadius: "50%",
-          background:   color,
-          boxShadow:    `0 0 24px ${color}99`,
-          position:     "absolute",
-          top:          "50%",
-          left:         "50%",
-          transform:    `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
-          transition:   active ? "none" : "transform 0.18s cubic-bezier(.22,1,.36,1)",
+          width:         THUMB_R * 2,
+          height:        THUMB_R * 2,
+          borderRadius:  "50%",
+          background:    color,
+          boxShadow:     `0 0 24px ${color}99`,
+          position:      "absolute",
+          top:           "50%",
+          left:          "50%",
+          transform:     `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
+          transition:    active ? "none" : "transform 0.18s cubic-bezier(.22,1,.36,1)",
           pointerEvents: "none",
         }}
       />
