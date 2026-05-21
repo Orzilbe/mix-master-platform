@@ -8,8 +8,7 @@ const isPublic = createRouteMatcher([
   "/leaderboard(.*)",
   "/api/check-location",
   "/api/leaderboard/display",   // polled by the display screen — no login needed
-  // Game server calls these with a shared secret — no Clerk session involved
-  "/api/game/player-info",
+  // Game server calls this with a shared secret — no Clerk session involved
   "/api/game/score",
 ]);
 

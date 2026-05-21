@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin } from "./supabase";
-import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, Location, PlayerToken, AvatarConfig } from "./types";
+import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, Location, AvatarConfig } from "./types";
 
 // ── Players ───────────────────────────────────────────────────────────────────
 
@@ -122,72 +122,6 @@ export async function getLatestChampion(): Promise<WeeklyChampion | null> {
     .limit(1)
     .single();
   return (data as WeeklyChampion) ?? null;
-}
-
-// ── Player tokens (game join) ─────────────────────────────────────────────────
-
-const SLOT_COLORS = ["#FF2D78", "#00E5FF", "#76FF03", "#FF6D00"];
-
-export async function getActiveTokenColors(): Promise<string[]> {
-  const admin = supabaseAdmin();
-  const { data } = await admin
-    .from("player_tokens")
-    .select("color")
-    .eq("used", false)
-    .gt("expires_at", new Date().toISOString());
-  return (data ?? []).map((r: { color: string }) => r.color);
-}
-
-export async function createJoinToken(playerId: string, color: string): Promise<PlayerToken> {
-  const admin = supabaseAdmin();
-  // Invalidate any existing active tokens for this player
-  await admin
-    .from("player_tokens")
-    .update({ used: true })
-    .eq("player_id", playerId)
-    .eq("used", false);
-
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-  const { data, error } = await admin
-    .from("player_tokens")
-    .insert({ player_id: playerId, color, expires_at: expiresAt.toISOString() })
-    .select()
-    .single();
-  if (error) throw error;
-  return data as PlayerToken;
-}
-
-export async function validateToken(token: string): Promise<PlayerToken | null> {
-  const admin = supabaseAdmin();
-  const { data } = await admin
-    .from("player_tokens")
-    .select("*, players(username, avatar_url, clerk_id)")
-    .eq("token", token)
-    .eq("used", false)
-    .gt("expires_at", new Date().toISOString())
-    .single();
-  return (data as PlayerToken) ?? null;
-}
-
-export async function invalidateToken(token: string): Promise<void> {
-  const admin = supabaseAdmin();
-  await admin.from("player_tokens").update({ used: true }).eq("token", token);
-}
-
-export { SLOT_COLORS };
-
-// ── Player weekly score ───────────────────────────────────────────────────────
-
-export async function getPlayerWeeklyScore(playerId: string): Promise<number> {
-  const now = new Date();
-  const { data } = await supabase
-    .from("weekly_leaderboard")
-    .select("total_score")
-    .eq("player_id", playerId)
-    .eq("week_number", getISOWeek(now))
-    .eq("week_year", getISOYear(now))
-    .single();
-  return (data as { total_score: number } | null)?.total_score ?? 0;
 }
 
 // ── Player game history ───────────────────────────────────────────────────────

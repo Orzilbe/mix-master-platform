@@ -23,7 +23,7 @@ export default function RegisterPage() {
         routing="path"
         path="/register"
         signInUrl="/login"
-        afterSignUpUrl="/hub"
+        afterSignUpUrl="/setup-profile"
         appearance={appearance}
       />
     </main>

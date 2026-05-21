@@ -54,18 +54,6 @@ export interface WeeklyChampion {
   players?: Pick<Player, "username" | "avatar_url" | "clerk_id" | "avatar_config">;
 }
 
-export interface PlayerToken {
-  id: string;
-  token: string;
-  player_id: string;
-  color: string;
-  expires_at: string;
-  used: boolean;
-  created_at: string;
-  // joined (optional)
-  players?: Pick<Player, "username" | "avatar_url" | "clerk_id">;
-}
-
 export interface Location {
   id: string;
   name: string;

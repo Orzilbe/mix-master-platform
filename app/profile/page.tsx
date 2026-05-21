@@ -110,7 +110,7 @@ export default async function ProfilePage() {
         {gamesPlayed === 0 && (
           <p className="font-boogaloo text-gray-500 text-center py-8">
             No games yet —{" "}
-            <a href="/hub/play" className="text-mm-cyan hover:underline">
+            <a href="/join" className="text-mm-cyan hover:underline">
               play your first game
             </a>
             !
