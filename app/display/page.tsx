@@ -26,7 +26,8 @@ type DisplayData = {
   champion: WeeklyChampion | null;
 };
 
-type Phase = "lobby" | "game";
+type Phase    = "lobby" | "game";
+type AdminLoc = { name: string; lat: number; lon: number; radius_m: number; is_active: boolean } | null;
 
 function weekCountdown(): string {
   const now = new Date();
@@ -42,30 +43,48 @@ function weekCountdown(): string {
   return `${d}d ${h}h ${m}m`;
 }
 
-type AdminLoc = { name: string; lat: number; lon: number; radius_m: number; is_active: boolean } | null;
-
 export default function DisplayPage() {
-  const [phase, setPhase]                   = useState<Phase>("lobby");
-  const [players, setPlayers]               = useState<LobbyPlayer[]>([]);
-  const [displayData, setDisplayData]       = useState<DisplayData>({ board: [], champion: null });
-  const [countdown, setCountdown]           = useState(weekCountdown());
+  const [phase,           setPhase]           = useState<Phase>("lobby");
+  const [players,         setPlayers]         = useState<LobbyPlayer[]>([]);
+  const [displayData,     setDisplayData]     = useState<DisplayData>({ board: [], champion: null });
+  const [countdown,       setCountdown]       = useState(weekCountdown());
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Admin panel
-  const [showAdmin,    setShowAdmin]    = useState(false);
-  const [adminLoc,     setAdminLoc]     = useState<AdminLoc>(null);
-  const [adminName,    setAdminName]    = useState("Mix Master Club");
-  const [adminRadius,  setAdminRadius]  = useState(200);
-  const [adminLat,     setAdminLat]     = useState<number | null>(null);
-  const [adminLng,     setAdminLng]     = useState<number | null>(null);
-  const [adminStatus,  setAdminStatus]  = useState<string | null>(null);
-  const [adminSaving,  setAdminSaving]  = useState(false);
+  const [showAdmin,     setShowAdmin]     = useState(false);
+  const [adminLoc,      setAdminLoc]      = useState<AdminLoc>(null);
+  const [adminName,     setAdminName]     = useState("Mix Master Club");
+  const [adminRadius,   setAdminRadius]   = useState(200);
+  const [adminLat,      setAdminLat]      = useState<number | null>(null);
+  const [adminLng,      setAdminLng]      = useState<number | null>(null);
+  const [adminStatus,   setAdminStatus]   = useState<string | null>(null);
+  const [adminSaving,   setAdminSaving]   = useState(false);
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [latStr,        setLatStr]        = useState("");
+  const [lngStr,        setLngStr]        = useState("");
+  const [addrInput,     setAddrInput]     = useState("");
+  const [addrSearching, setAddrSearching] = useState(false);
 
-  const socketRef = useRef<Socket | null>(null);
-  const rowRefs   = useRef<Map<string, HTMLDivElement>>(new Map());
-  const oldTops   = useRef<Map<string, number>>(new Map());
+  const socketRef     = useRef<Socket | null>(null);
+  const rowRefs       = useRef<Map<string, HTMLDivElement>>(new Map());
+  const oldTops       = useRef<Map<string, number>>(new Map());
+  const mapRef        = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const leafletMapRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markerRef     = useRef<any>(null);
 
   const isCollapsed = phase === "game" && !sidebarExpanded;
+
+  // Update location state + coordinate strings + Leaflet marker/view
+  const updateLocation = (lat: number, lng: number) => {
+    setAdminLat(lat);
+    setAdminLng(lng);
+    setLatStr(lat.toFixed(6));
+    setLngStr(lng.toFixed(6));
+    if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+    if (leafletMapRef.current) leafletMapRef.current.setView([lat, lng], 15);
+  };
 
   /* ── FLIP rank animation ─────────────────────────────────────────── */
   useLayoutEffect(() => {
@@ -121,7 +140,7 @@ export default function DisplayPage() {
     return () => clearInterval(id);
   }, []);
 
-  /* ── Admin panel init ───────────────────────────────────────────── */
+  /* ── Admin: detect ?admin=true and fetch current location ─────────── */
   useEffect(() => {
     const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
     if (!isAdmin) return;
@@ -135,30 +154,114 @@ export default function DisplayPage() {
         setAdminRadius(location.radius_m);
         setAdminLat(location.lat);
         setAdminLng(location.lon);
+        setLatStr(location.lat.toFixed(6));
+        setLngStr(location.lon.toFixed(6));
+        // If map already initialized, update marker
+        if (markerRef.current && leafletMapRef.current) {
+          markerRef.current.setLatLng([location.lat, location.lon]);
+          leafletMapRef.current.setView([location.lat, location.lon], 15);
+        }
       })
       .catch(() => {});
   }, []);
 
+  /* ── Admin: load Leaflet CSS + JS from CDN ───────────────────────── */
+  useEffect(() => {
+    if (!showAdmin) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).L) { setLeafletLoaded(true); return; }
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const link = document.createElement("link");
+      link.rel  = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[src*="leaflet"]')) {
+      const script   = document.createElement("script");
+      script.src     = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload  = () => setLeafletLoaded(true);
+      document.head.appendChild(script);
+    }
+  }, [showAdmin]);
+
+  /* ── Admin: init Leaflet map once loaded + container rendered ─────── */
+  useEffect(() => {
+    if (!leafletLoaded || !showAdmin || !mapRef.current || leafletMapRef.current) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L          = (window as any).L;
+    const defaultLat = adminLat ?? 32.0853;
+    const defaultLng = adminLng ?? 34.7818;
+
+    const map = L.map(mapRef.current).setView([defaultLat, defaultLng], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const marker = L.marker([defaultLat, defaultLng], { draggable: true }).addTo(map);
+    marker.on("dragend", () => {
+      const pos = marker.getLatLng();
+      setAdminLat(pos.lat);
+      setAdminLng(pos.lng);
+      setLatStr(pos.lat.toFixed(6));
+      setLngStr(pos.lng.toFixed(6));
+    });
+
+    leafletMapRef.current = map;
+    markerRef.current     = marker;
+
+    if (!latStr) setLatStr(defaultLat.toFixed(6));
+    if (!lngStr) setLngStr(defaultLng.toFixed(6));
+
+    // Give the panel time to paint before measuring map size
+    setTimeout(() => map.invalidateSize(), 120);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leafletLoaded, showAdmin]);
+
+  /* ── Admin actions ───────────────────────────────────────────────── */
   const adminGPS = () => {
     if (!navigator.geolocation) { setAdminStatus("GPS not available"); return; }
     setAdminStatus("Getting location…");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setAdminLat(pos.coords.latitude);
-        setAdminLng(pos.coords.longitude);
-        setAdminStatus("Got GPS coords");
+        updateLocation(pos.coords.latitude, pos.coords.longitude);
+        setAdminStatus("Location captured");
       },
       () => setAdminStatus("GPS denied — check browser permissions"),
-      { timeout: 15_000 },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     );
   };
 
+  const searchAddress = async () => {
+    if (!addrInput.trim()) return;
+    setAddrSearching(true);
+    setAdminStatus(null);
+    try {
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addrInput)}&format=json&limit=1`,
+        { headers: { "Accept-Language": "en" } },
+      );
+      const data = await res.json();
+      if (data[0]) {
+        updateLocation(parseFloat(data[0].lat), parseFloat(data[0].lon));
+        setAdminStatus(`Found: ${(data[0].display_name as string).split(",").slice(0, 2).join(", ")}`);
+      } else {
+        setAdminStatus("Address not found");
+      }
+    } catch {
+      setAdminStatus("Search failed");
+    } finally {
+      setAddrSearching(false);
+    }
+  };
+
   const adminSave = async () => {
-    if (adminLat == null || adminLng == null) { setAdminStatus("Get GPS first"); return; }
+    if (adminLat == null || adminLng == null) { setAdminStatus("Set a location first"); return; }
     setAdminSaving(true);
     setAdminStatus(null);
     try {
-      const res = await fetch("/api/location/set", {
+      const res  = await fetch("/api/location/set", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ lat: adminLat, lng: adminLng, name: adminName, radius_meters: adminRadius }),
@@ -177,7 +280,7 @@ export default function DisplayPage() {
   const adminToggle = async (active: boolean) => {
     setAdminSaving(true);
     try {
-      const res = await fetch("/api/location/activate", {
+      const res  = await fetch("/api/location/activate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ active }),
@@ -201,7 +304,6 @@ export default function DisplayPage() {
   /* ── Sidebar: full leaderboard view ─────────────────────────────── */
   const sidebarFull = (
     <div className={`flex-col h-full w-[280px] overflow-hidden ${isCollapsed ? "hidden" : "flex"}`}>
-      {/* Title */}
       <div className="px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
         <h2
           className="font-marker text-xl text-center"
@@ -211,7 +313,6 @@ export default function DisplayPage() {
         </h2>
       </div>
 
-      {/* Leaderboard rows */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {displayData.board.map((row, i) => {
           const isActive = activeUserIds.has(row.clerk_id);
@@ -244,13 +345,11 @@ export default function DisplayPage() {
         )}
       </div>
 
-      {/* Countdown */}
       <div className="px-6 py-3 border-t border-white/10 text-center shrink-0">
         <p className="font-boogaloo text-white/30 text-xs uppercase tracking-widest">Week resets in</p>
         <p className="font-marker text-white/60 text-lg">{countdown}</p>
       </div>
 
-      {/* Last week's champion */}
       {displayData.champion?.players && (
         <div className="px-6 py-4 border-t border-white/10 flex flex-col items-center gap-2 shrink-0">
           <p className="font-boogaloo text-yellow-400/70 text-xs uppercase tracking-widest">Last Week&apos;s Champion</p>
@@ -268,7 +367,7 @@ export default function DisplayPage() {
     </div>
   );
 
-  /* ── Sidebar: collapsed view (game phase, not hovering) ──────────── */
+  /* ── Sidebar: collapsed view ─────────────────────────────────────── */
   const sidebarCompact = isCollapsed && (
     <div className="flex flex-col items-center gap-2 py-5 w-20 h-full">
       <span className="text-xl leading-none">👑</span>
@@ -321,8 +420,6 @@ export default function DisplayPage() {
             className="flex flex-col items-center gap-8 px-8 py-10 w-full"
             style={{ overflow: "visible", textAlign: "center" }}
           >
-
-            {/* Logo */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
@@ -337,7 +434,6 @@ export default function DisplayPage() {
               }}
             />
 
-            {/* QR code */}
             <div className="flex flex-col items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -352,7 +448,6 @@ export default function DisplayPage() {
               </p>
             </div>
 
-            {/* Connected players */}
             {players.length > 0 && (
               <div className="flex gap-4 flex-wrap justify-center">
                 {players.map(p => (
@@ -378,7 +473,6 @@ export default function DisplayPage() {
               </div>
             )}
 
-            {/* Status messages */}
             {players.length === 0 && (
               <p className="font-boogaloo text-white/25 text-lg">Waiting for players to scan…</p>
             )}
@@ -398,7 +492,7 @@ export default function DisplayPage() {
         )}
       </div>
 
-      {/* Right: always-visible leaderboard sidebar */}
+      {/* Right: leaderboard sidebar */}
       <aside
         onMouseEnter={() => { if (phase === "game") setSidebarExpanded(true); }}
         onMouseLeave={() => setSidebarExpanded(false)}
@@ -415,22 +509,25 @@ export default function DisplayPage() {
       {/* Admin panel — shown only when ?admin=true */}
       {showAdmin && (
         <div
-          className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-80"
+          className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-96"
           style={{
-            background: "rgba(10,10,18,0.96)",
-            border:     "1px solid rgba(0,229,255,.25)",
-            boxShadow:  "0 0 40px rgba(0,229,255,.15)",
+            background:  "rgba(10,10,18,0.97)",
+            border:      "1px solid rgba(0,229,255,.25)",
+            boxShadow:   "0 0 40px rgba(0,229,255,.12)",
+            maxHeight:   "94vh",
+            overflowY:   "auto",
           }}
         >
-          <div className="flex items-center justify-between">
+          {/* Header */}
+          <div className="flex items-center justify-between shrink-0">
             <p className="font-marker text-mm-cyan text-sm">Venue Admin</p>
-            <button onClick={() => setShowAdmin(false)} className="text-white/30 hover:text-white/70 text-lg leading-none">&times;</button>
+            <button onClick={() => setShowAdmin(false)} className="text-white/30 hover:text-white/70 text-xl leading-none">&times;</button>
           </div>
 
           {/* Current location status */}
           {adminLoc && (
             <div
-              className="px-3 py-2 rounded-xl text-xs font-boogaloo"
+              className="px-3 py-2 rounded-xl text-xs font-boogaloo shrink-0"
               style={{
                 background: adminLoc.is_active ? "rgba(118,255,3,.1)" : "rgba(255,45,120,.08)",
                 border:     `1px solid ${adminLoc.is_active ? "rgba(118,255,3,.3)" : "rgba(255,45,120,.2)"}`,
@@ -444,33 +541,98 @@ export default function DisplayPage() {
             </div>
           )}
 
+          {/* Address search */}
+          <div className="flex gap-2 shrink-0">
+            <input
+              type="text"
+              value={addrInput}
+              onChange={e => setAddrInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && searchAddress()}
+              placeholder="Search address…"
+              className="flex-1 bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                         px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
+            />
+            <button
+              onClick={searchAddress}
+              disabled={addrSearching}
+              className="font-boogaloo text-xs px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white shrink-0 disabled:opacity-40"
+              style={{ background: "rgba(0,229,255,.15)", border: "1px solid rgba(0,229,255,.3)" }}
+            >
+              {addrSearching ? "…" : "🔍"}
+            </button>
+          </div>
+
           {/* GPS button */}
           <button
             onClick={adminGPS}
-            className="font-boogaloo text-sm px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white"
+            className="font-boogaloo text-sm px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white shrink-0"
             style={{ background: "rgba(0,229,255,.12)", border: "1px solid rgba(0,229,255,.2)" }}
           >
             📍 Use My Current Location
           </button>
 
-          {adminLat != null && (
-            <p className="font-boogaloo text-white/40 text-xs text-center">
-              {adminLat.toFixed(5)}, {adminLng?.toFixed(5)}
-            </p>
+          {/* Interactive Leaflet map */}
+          <div
+            ref={mapRef}
+            className="w-full rounded-xl overflow-hidden shrink-0"
+            style={{ height: 200, border: "1px solid rgba(255,255,255,.1)" }}
+          />
+          {!leafletLoaded && (
+            <p className="font-boogaloo text-white/20 text-xs text-center -mt-2">Loading map…</p>
           )}
 
-          {/* Name */}
+          {/* Coordinate inputs */}
+          <div className="flex gap-2 shrink-0">
+            <div className="flex-1">
+              <p className="font-boogaloo text-white/30 text-xs mb-1">Latitude</p>
+              <input
+                type="text"
+                value={latStr}
+                onChange={e => {
+                  setLatStr(e.target.value);
+                  const n = parseFloat(e.target.value);
+                  if (!isNaN(n) && n >= -90 && n <= 90) {
+                    setAdminLat(n);
+                    if (markerRef.current) markerRef.current.setLatLng([n, adminLng ?? 34.7818]);
+                    if (leafletMapRef.current) leafletMapRef.current.setView([n, adminLng ?? 34.7818]);
+                  }
+                }}
+                className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                           px-2 py-1.5 font-mono text-white text-xs outline-none"
+              />
+            </div>
+            <div className="flex-1">
+              <p className="font-boogaloo text-white/30 text-xs mb-1">Longitude</p>
+              <input
+                type="text"
+                value={lngStr}
+                onChange={e => {
+                  setLngStr(e.target.value);
+                  const n = parseFloat(e.target.value);
+                  if (!isNaN(n) && n >= -180 && n <= 180) {
+                    setAdminLng(n);
+                    if (markerRef.current) markerRef.current.setLatLng([adminLat ?? 32.0853, n]);
+                    if (leafletMapRef.current) leafletMapRef.current.setView([adminLat ?? 32.0853, n]);
+                  }
+                }}
+                className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                           px-2 py-1.5 font-mono text-white text-xs outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Venue name */}
           <input
             type="text"
             value={adminName}
             onChange={e => setAdminName(e.target.value)}
             placeholder="Venue name"
             className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
-                       px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
+                       px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20 shrink-0"
           />
 
           {/* Radius slider */}
-          <div>
+          <div className="shrink-0">
             <div className="flex justify-between mb-1">
               <span className="font-boogaloo text-white/40 text-xs">Radius</span>
               <span className="font-marker text-mm-cyan text-xs">{adminRadius}m</span>
@@ -488,14 +650,14 @@ export default function DisplayPage() {
           <button
             onClick={adminSave}
             disabled={adminSaving || adminLat == null}
-            className="font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+            className="font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40 shrink-0"
             style={{ background: "#00E5FF22", border: "1px solid #00E5FF66" }}
           >
             {adminSaving ? "Saving…" : "Save Location"}
           </button>
 
           {/* Open / Close venue */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <button
               onClick={() => adminToggle(true)}
               disabled={adminSaving}
@@ -516,17 +678,7 @@ export default function DisplayPage() {
 
           {/* Status message */}
           {adminStatus && (
-            <p className="font-boogaloo text-white/60 text-xs text-center">{adminStatus}</p>
-          )}
-
-          {/* Map preview */}
-          {adminLat != null && adminLng != null && (
-            <iframe
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=${adminLng - 0.005},${adminLat - 0.003},${adminLng + 0.005},${adminLat + 0.003}&layer=mapnik&marker=${adminLat},${adminLng}`}
-              className="w-full rounded-xl border border-white/10"
-              style={{ height: 160 }}
-              title="Venue map"
-            />
+            <p className="font-boogaloo text-white/60 text-xs text-center shrink-0">{adminStatus}</p>
           )}
         </div>
       )}
