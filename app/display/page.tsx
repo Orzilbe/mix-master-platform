@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
-import type { AvatarConfig } from "@/lib/types";
+import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
-// Always use the canonical production URL — never window.location.origin
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
 const JOIN_URL = `${APP_URL}/join`;
 const QR_SRC = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
@@ -20,13 +19,62 @@ type LobbyPlayer = {
   color:        string;
 };
 
+type BoardRow = WeeklyLeaderboardRow & { avatar_config: AvatarConfig | null };
+
+type DisplayData = {
+  board:    BoardRow[];
+  champion: WeeklyChampion | null;
+};
+
 type Phase = "lobby" | "game";
 
-export default function DisplayPage() {
-  const [phase, setPhase]     = useState<Phase>("lobby");
-  const [players, setPlayers] = useState<LobbyPlayer[]>([]);
-  const socketRef             = useRef<Socket | null>(null);
+function weekCountdown(): string {
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun…6=Sat
+  // Days until next Monday: Mon→7, Tue→6, …, Sun→1
+  const daysUntilMonday = ((8 - dayOfWeek) % 7) || 7;
+  const nextMonday = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + daysUntilMonday,
+  ));
+  const diffMs = nextMonday.getTime() - now.getTime();
+  if (diffMs <= 0) return "0d 0h 0m";
+  const totalMins = Math.floor(diffMs / 60_000);
+  const d = Math.floor(totalMins / (60 * 24));
+  const h = Math.floor((totalMins % (60 * 24)) / 60);
+  const m = totalMins % 60;
+  return `${d}d ${h}h ${m}m`;
+}
 
+export default function DisplayPage() {
+  const [phase, setPhase]             = useState<Phase>("lobby");
+  const [players, setPlayers]         = useState<LobbyPlayer[]>([]);
+  const [displayData, setDisplayData] = useState<DisplayData>({ board: [], champion: null });
+  const [countdown, setCountdown]     = useState(weekCountdown());
+
+  const socketRef  = useRef<Socket | null>(null);
+  const rowRefs    = useRef<Map<string, HTMLDivElement>>(new Map());
+  const oldTops    = useRef<Map<string, number>>(new Map());
+
+  /* ── FLIP animation: runs after board state update changes the DOM ── */
+  useLayoutEffect(() => {
+    rowRefs.current.forEach((el, id) => {
+      const oldTop = oldTops.current.get(id);
+      if (oldTop == null) return;
+      const newTop = el.getBoundingClientRect().top;
+      const delta  = oldTop - newTop;
+      if (delta === 0) return;
+      el.style.transition = "none";
+      el.style.transform  = `translateY(${delta}px)`;
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 0.5s ease";
+        el.style.transform  = "translateY(0)";
+      });
+    });
+  }, [displayData]);
+
+  /* ── Socket.io ────────────────────────────────────────────────────── */
   useEffect(() => {
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
@@ -42,98 +90,228 @@ export default function DisplayPage() {
     return () => { socket.disconnect(); };
   }, []);
 
-  /* ── Game phase — fullscreen game canvas iframe ───────────────────────── */
-  if (phase === "game") {
-    return (
-      <iframe
-        src={`${GAME_SERVER}/display?embed=1`}
-        className="fixed inset-0 w-full h-full border-0"
-        title="Mix Master"
-        allow="fullscreen"
-      />
-    );
-  }
+  /* ── Leaderboard polling ──────────────────────────────────────────── */
+  useEffect(() => {
+    const fetchBoard = async () => {
+      try {
+        const res = await fetch("/api/leaderboard/display");
+        if (!res.ok) return;
+        const data: DisplayData = await res.json();
 
-  /* ── Lobby phase ──────────────────────────────────────────────────────── */
-  return (
-    <div className="min-h-screen bg-mm-bg flex flex-col items-center justify-center gap-10 px-8 py-12">
+        // Capture current DOM positions before React updates the board
+        const snapshot = new Map<string, number>();
+        rowRefs.current.forEach((el, id) => {
+          snapshot.set(id, el.getBoundingClientRect().top);
+        });
+        oldTops.current = snapshot;
 
-      {/* Logo */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`${GAME_SERVER}/mixMaster.png`}
-        alt="Mix Master"
-        className="h-20 object-contain"
-        style={{ filter: "drop-shadow(0 0 24px rgba(0,229,255,.45))" }}
-      />
+        setDisplayData(data);
+      } catch {
+        // silently skip on network error
+      }
+    };
 
-      {/* QR code */}
-      <div className="flex flex-col items-center gap-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={QR_SRC}
-          alt="Scan to join"
-          width={240}
-          height={240}
-          className="rounded-2xl border-[5px] border-white shadow-2xl"
-        />
-        <p className="font-boogaloo text-white/40 text-xl tracking-widest uppercase">
-          Scan to join the game
-        </p>
+    fetchBoard();
+    const id = setInterval(fetchBoard, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* ── Week countdown ticker ────────────────────────────────────────── */
+  useEffect(() => {
+    const id = setInterval(() => setCountdown(weekCountdown()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* ── Derived ──────────────────────────────────────────────────────── */
+  const activeUserIds = new Set(players.map(p => p.userId));
+  const leaderColor   = displayData.board[0]?.avatar_config?.color ?? "#FF2D78";
+
+  /* ── Leaderboard sidebar (always visible) ─────────────────────────── */
+  const sidebar = (
+    <aside className="w-[30%] min-w-[280px] flex flex-col bg-mm-surface h-screen overflow-hidden border-l border-white/10">
+
+      {/* Title */}
+      <div className="px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
+        <h2
+          className="font-marker text-xl text-center"
+          style={{ color: leaderColor, textShadow: `0 0 20px ${leaderColor}88` }}
+        >
+          KINGS OF THE WALL 👑
+        </h2>
       </div>
 
-      {/* Connected player cards */}
-      {players.length > 0 && (
-        <div className="flex gap-6 flex-wrap justify-center">
-          {players.map(p => (
+      {/* Rows */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {displayData.board.map((row, i) => {
+          const isActive = activeUserIds.has(row.clerk_id);
+          const cfg      = row.avatar_config ?? DEFAULT_AVATAR;
+          return (
             <div
-              key={p.slotId}
-              className="flex flex-col items-center gap-3 bg-mm-surface rounded-2xl px-6 py-5"
-              style={{ border: `2px solid ${p.color}`, boxShadow: `0 0 24px ${p.color}44` }}
+              key={row.player_id}
+              ref={el => {
+                if (el) rowRefs.current.set(row.player_id, el);
+                else     rowRefs.current.delete(row.player_id);
+              }}
+              className="flex items-center gap-3 rounded-xl px-3 py-2"
+              style={{
+                background: isActive ? `${cfg.color}18` : "transparent",
+                border:     `1px solid ${isActive ? cfg.color : "rgba(255,255,255,0.06)"}`,
+                boxShadow:  isActive ? `0 0 14px ${cfg.color}44` : "none",
+              }}
             >
-              <div
-                className="rounded-full flex items-center justify-center"
-                style={{
-                  width:      "6rem",
-                  height:     "6rem",
-                  background: `${p.color}18`,
-                  border:     `2px solid ${p.color}`,
-                  boxShadow:  `0 0 20px ${p.color}44`,
-                }}
+              <span
+                className="font-marker text-sm w-5 text-center shrink-0"
+                style={{ color: "rgba(255,255,255,0.4)" }}
               >
-                <PlayerAvatar
-                  config={{ ...(p.avatarConfig ?? DEFAULT_AVATAR), color: p.color }}
-                  size={72}
-                />
-              </div>
-              <span className="font-marker text-base" style={{ color: p.color }}>
-                {p.username}
+                {i + 1}
+              </span>
+              <PlayerAvatar config={{ ...cfg, color: cfg.color }} size={36} />
+              <span className="font-boogaloo text-white flex-1 truncate text-sm">
+                {row.username}
+              </span>
+              <span className="font-marker text-sm shrink-0" style={{ color: cfg.color }}>
+                {row.total_score}
               </span>
             </div>
-          ))}
+          );
+        })}
+        {displayData.board.length === 0 && (
+          <p className="font-boogaloo text-white/25 text-sm text-center pt-4">
+            No scores yet this week
+          </p>
+        )}
+      </div>
+
+      {/* Countdown */}
+      <div className="px-6 py-3 border-t border-white/10 text-center shrink-0">
+        <p className="font-boogaloo text-white/30 text-xs uppercase tracking-widest">
+          Week resets in
+        </p>
+        <p className="font-marker text-white/60 text-lg">{countdown}</p>
+      </div>
+
+      {/* Last week's champion */}
+      {displayData.champion?.players && (
+        <div className="px-6 py-4 border-t border-white/10 flex flex-col items-center gap-2 shrink-0">
+          <p className="font-boogaloo text-yellow-400/70 text-xs uppercase tracking-widest">
+            Last Week&apos;s Champion
+          </p>
+          <PlayerAvatar
+            config={{
+              ...(displayData.champion.players.avatar_config ?? DEFAULT_AVATAR),
+              color: displayData.champion.players.avatar_config?.color ?? "#FFD600",
+            }}
+            size={48}
+          />
+          <p className="font-marker text-white/90 text-sm">
+            {displayData.champion.players.username}
+          </p>
+          <p className="font-boogaloo text-yellow-400/50 text-xs">
+            Mix Master of the Week 👑
+          </p>
         </div>
       )}
+    </aside>
+  );
 
-      {/* Status / start */}
-      {players.length === 0 && (
-        <p className="font-boogaloo text-white/25 text-lg">
-          Waiting for players to scan…
-        </p>
-      )}
-      {players.length === 1 && (
-        <p className="font-boogaloo text-white/35 text-lg">
-          1 player connected — need at least 1 more…
-        </p>
-      )}
-      {players.length >= 2 && (
-        <button
-          onClick={() => socketRef.current?.emit("game-start")}
-          className="font-marker text-2xl px-14 py-5 rounded-2xl text-white transition-transform hover:scale-105 active:scale-95"
-          style={{ background: "#FF2D78", boxShadow: "0 0 40px rgba(255,45,120,.6)" }}
-        >
-          START GAME
-        </button>
-      )}
+  /* ── Layout ───────────────────────────────────────────────────────── */
+  return (
+    <div className="flex h-screen overflow-hidden bg-mm-bg">
+
+      {/* Left: game iframe or lobby */}
+      <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
+        {phase === "game" ? (
+          <iframe
+            src={`${GAME_SERVER}/display?embed=1`}
+            className="absolute inset-0 w-full h-full border-0"
+            title="Mix Master"
+            allow="fullscreen"
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-8 px-8 py-10 w-full">
+
+            {/* Logo */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${GAME_SERVER}/mixMaster.png`}
+              alt="Mix Master"
+              className="h-16 object-contain"
+              style={{ filter: "drop-shadow(0 0 24px rgba(0,229,255,.45))" }}
+            />
+
+            {/* QR code */}
+            <div className="flex flex-col items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={QR_SRC}
+                alt="Scan to join"
+                width={200}
+                height={200}
+                className="rounded-2xl border-[5px] border-white shadow-2xl"
+              />
+              <p className="font-boogaloo text-white/40 text-lg tracking-widest uppercase">
+                Scan to join the game
+              </p>
+            </div>
+
+            {/* Connected players */}
+            {players.length > 0 && (
+              <div className="flex gap-4 flex-wrap justify-center">
+                {players.map(p => (
+                  <div
+                    key={p.slotId}
+                    className="flex flex-col items-center gap-2 bg-mm-surface rounded-2xl px-5 py-4"
+                    style={{ border: `2px solid ${p.color}`, boxShadow: `0 0 20px ${p.color}44` }}
+                  >
+                    <div
+                      className="rounded-full flex items-center justify-center"
+                      style={{
+                        width:      "5rem",
+                        height:     "5rem",
+                        background: `${p.color}18`,
+                        border:     `2px solid ${p.color}`,
+                        boxShadow:  `0 0 16px ${p.color}44`,
+                      }}
+                    >
+                      <PlayerAvatar
+                        config={{ ...(p.avatarConfig ?? DEFAULT_AVATAR), color: p.color }}
+                        size={60}
+                      />
+                    </div>
+                    <span className="font-marker text-sm" style={{ color: p.color }}>
+                      {p.username}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Status */}
+            {players.length === 0 && (
+              <p className="font-boogaloo text-white/25 text-lg">
+                Waiting for players to scan…
+              </p>
+            )}
+            {players.length === 1 && (
+              <p className="font-boogaloo text-white/35 text-lg">
+                1 player connected — need at least 1 more…
+              </p>
+            )}
+            {players.length >= 2 && (
+              <button
+                onClick={() => socketRef.current?.emit("game-start")}
+                className="font-marker text-2xl px-12 py-4 rounded-2xl text-white transition-transform hover:scale-105 active:scale-95"
+                style={{ background: "#FF2D78", boxShadow: "0 0 40px rgba(255,45,120,.6)" }}
+              >
+                START GAME
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Right: always-visible leaderboard sidebar */}
+      {sidebar}
     </div>
   );
 }

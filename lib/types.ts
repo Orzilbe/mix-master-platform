@@ -35,6 +35,7 @@ export interface WeeklyLeaderboardRow {
   clerk_id: string;
   username: string;
   avatar_url: string | null;
+  avatar_config?: AvatarConfig | null;
   week_start: string;
   week_number: number;
   week_year: number;
@@ -50,7 +51,7 @@ export interface WeeklyChampion {
   total_score: number;
   crowned_at: string;
   // joined
-  players?: Pick<Player, "username" | "avatar_url" | "clerk_id">;
+  players?: Pick<Player, "username" | "avatar_url" | "clerk_id" | "avatar_config">;
 }
 
 export interface PlayerToken {
