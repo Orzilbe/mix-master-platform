@@ -1,101 +1,71 @@
 import Image from "next/image";
+import Link from "next/link";
+import WeeklyChampion from "@/components/WeeklyChampion";
+import { getLatestChampion, getWeeklyLeaderboard } from "@/lib/db";
 
-export default function Home() {
+export default async function LandingPage() {
+  const [champion, board] = await Promise.all([
+    getLatestChampion().catch(() => null),
+    getWeeklyLeaderboard(0).catch(() => []),
+  ]);
+
+  const COLORS = ["text-mm-gold", "text-gray-300", "text-mm-orange"];
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <main className="min-h-screen flex flex-col items-center justify-center gap-10 px-4 py-16">
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {/* Logo + tagline */}
+      <div className="flex flex-col items-center gap-4">
+        <Image src="/logo.png" alt="Mix Master" width={300} height={150} priority />
+        <p className="font-boogaloo text-xl text-center text-gray-400 max-w-md">
+          Daily mini-games. Weekly glory. Only for those who show up.
+        </p>
+      </div>
+
+      {/* CTA */}
+      <div className="flex gap-4">
+        <Link
+          href="/login"
+          className="font-marker px-8 py-3 rounded-xl bg-mm-pink text-white shadow-[0_0_22px_rgba(255,45,120,.5)] hover:scale-105 transition-transform"
+        >
+          Sign In
+        </Link>
+        <Link
+          href="/register"
+          className="font-marker px-8 py-3 rounded-xl border-2 border-mm-cyan text-mm-cyan hover:bg-mm-cyan hover:text-black transition-colors"
+        >
+          Register
+        </Link>
+      </div>
+
+      {/* Last week's champion */}
+      <div className="w-full max-w-md">
+        <WeeklyChampion champion={champion} />
+      </div>
+
+      {/* This week's top 3 */}
+      {board.length > 0 && (
+        <div className="w-full max-w-md">
+          <h2 className="font-marker text-mm-cyan text-xl mb-3 text-center">This Week&apos;s Leaders</h2>
+          <div className="flex flex-col gap-2">
+            {board.slice(0, 3).map((row, i) => (
+              <div
+                key={row.player_id}
+                className="flex items-center gap-3 bg-mm-surface rounded-xl px-4 py-2.5 border border-white/10"
+              >
+                <span className={`font-marker text-sm w-5 text-center ${COLORS[i]}`}>
+                  {i === 0 ? "👑" : i + 1}
+                </span>
+                <span className="font-boogaloo text-gray-200 flex-1 truncate">{row.username}</span>
+                <span className="font-marker text-mm-pink text-sm">
+                  {(row.total_score / 10).toFixed(1)}%
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+
+    </main>
   );
 }

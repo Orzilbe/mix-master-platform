@@ -9,8 +9,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        "mm-bg":     "#0e0e0e",
+        "mm-pink":   "#FF2D78",
+        "mm-cyan":   "#00E5FF",
+        "mm-green":  "#76FF03",
+        "mm-orange": "#FF6D00",
+        "mm-gold":   "#FFD700",
+        "mm-surface":"#1a1a1a",
+      },
+      fontFamily: {
+        marker: ["var(--font-marker)", "cursive"],
+        boogaloo: ["var(--font-boogaloo)", "sans-serif"],
       },
     },
   },
