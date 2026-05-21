@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
+import type { AvatarConfig } from "@/lib/types";
 import { io, Socket } from "socket.io-client";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
@@ -27,6 +29,9 @@ export default function JoinPage() {
   const { user, isLoaded } = useUser();
   const router              = useRouter();
 
+  const [profileReady, setProfileReady] = useState(false);
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(DEFAULT_AVATAR);
+
   const [serverState, setServerState] = useState<ServerState>("checking");
   const [retryKey, setRetryKey]       = useState(0);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -48,9 +53,26 @@ export default function JoinPage() {
     if (isLoaded && !user) router.replace("/login");
   }, [isLoaded, user, router]);
 
-  // ── Phase 1: health check ─────────────────────────────────────────────────
+  // ── Profile check — redirect to /setup-profile if avatar not configured ──
   useEffect(() => {
     if (!isLoaded || !user) return;
+
+    fetch("/api/profile/me")
+      .then(r => r.json())
+      .then(({ player }) => {
+        if (!player?.avatar_config) {
+          router.replace("/setup-profile");
+          return;
+        }
+        setAvatarConfig(player.avatar_config as AvatarConfig);
+        setProfileReady(true);
+      })
+      .catch(() => setProfileReady(true)); // On error, proceed without avatar
+  }, [isLoaded, user, router]);
+
+  // ── Phase 1: health check ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isLoaded || !user || !profileReady) return;
     setServerState("checking");
     setHealthError(null);
 
@@ -81,7 +103,7 @@ export default function JoinPage() {
       abortControllers.forEach(c => c.abort());
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isLoaded, user, retryKey]);
+  }, [isLoaded, user, profileReady, retryKey]);
 
   // ── Phase 2: Socket.io ────────────────────────────────────────────────────
   useEffect(() => {
@@ -92,9 +114,10 @@ export default function JoinPage() {
 
     socket.on("connect", () => {
       socket.emit("lobby-join", {
-        userId:    user.id,
-        username:  user.username ?? user.firstName ?? "Player",
-        avatarUrl: user.imageUrl ?? null,
+        userId:       user.id,
+        username:     user.username ?? user.firstName ?? "Player",
+        avatarUrl:    user.imageUrl ?? null,
+        avatarConfig: avatarConfig,
       });
     });
 
@@ -151,7 +174,7 @@ export default function JoinPage() {
   const retry = () => { setHealthError(null); setRetryKey(k => k + 1); };
 
   /* ── Render ────────────────────────────────────────────────────────────── */
-  if (!isLoaded || !user) return <Centered><Spinner /></Centered>;
+  if (!isLoaded || !user || !profileReady) return <Centered><Spinner /></Centered>;
 
   if (serverState === "checking") {
     return <Centered><Spinner /><Muted>Connecting to game server…</Muted></Centered>;
@@ -210,17 +233,20 @@ export default function JoinPage() {
     const name = user.username ?? user.firstName ?? "Player";
     return (
       <Centered>
-        {user.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.imageUrl} alt={name} width={100} height={100} className="rounded-full"
-            style={{ outline: `4px solid ${myColor}`, outlineOffset: "4px" }} />
-        ) : (
-          <div className="w-24 h-24 rounded-full flex items-center justify-center font-marker text-3xl"
-            style={{ background: myColor }}>{name[0].toUpperCase()}</div>
-        )}
+        {/* Avatar with color glow ring */}
+        <div
+          className="rounded-full flex items-center justify-center"
+          style={{
+            width:     "9rem",
+            height:    "9rem",
+            background: `${myColor}18`,
+            border:    `3px solid ${myColor}`,
+            boxShadow: `0 0 48px ${myColor}66`,
+          }}
+        >
+          <PlayerAvatar config={{ ...avatarConfig, color: myColor }} size={104} />
+        </div>
         <h1 className="font-marker text-2xl text-white">{name}</h1>
-        <div className="w-20 h-20 rounded-full border-4 border-white/20"
-          style={{ background: myColor, boxShadow: `0 0 40px ${myColor}80` }} />
         <p className="font-boogaloo text-xl" style={{ color: myColor }}>YOU&apos;RE IN! 🎨</p>
         <Muted>Waiting for host to start…</Muted>
       </Centered>

@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin } from "./supabase";
-import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, Location, PlayerToken } from "./types";
+import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, Location, PlayerToken, AvatarConfig } from "./types";
 
 // ── Players ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,40 @@ export async function getPlayer(clerkId: string): Promise<Player | null> {
     .eq("clerk_id", clerkId)
     .single();
   return (data as Player) ?? null;
+}
+
+export async function updatePlayerProfile(
+  clerkId: string,
+  username: string,
+  avatarConfig: AvatarConfig,
+): Promise<Player> {
+  const admin = supabaseAdmin();
+
+  // Check if player already exists
+  const { data: existing } = await admin
+    .from("players")
+    .select("id")
+    .eq("clerk_id", clerkId)
+    .single();
+
+  if (existing) {
+    const { data, error } = await admin
+      .from("players")
+      .update({ username, avatar_config: avatarConfig })
+      .eq("clerk_id", clerkId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Player;
+  }
+
+  const { data, error } = await admin
+    .from("players")
+    .insert({ clerk_id: clerkId, username, avatar_config: avatarConfig })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Player;
 }
 
 // ── Game Sessions ─────────────────────────────────────────────────────────────

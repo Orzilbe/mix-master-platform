@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
+import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
+import type { AvatarConfig } from "@/lib/types";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 // Always use the canonical production URL — never window.location.origin
@@ -10,11 +12,12 @@ const JOIN_URL = `${APP_URL}/join`;
 const QR_SRC = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
 
 type LobbyPlayer = {
-  slotId: number;
-  userId: string;
-  username: string;
-  avatarUrl: string | null;
-  color: string;
+  slotId:       number;
+  userId:       string;
+  username:     string;
+  avatarUrl:    string | null;
+  avatarConfig: AvatarConfig | null;
+  color:        string;
 };
 
 type Phase = "lobby" | "game";
@@ -88,24 +91,21 @@ export default function DisplayPage() {
               className="flex flex-col items-center gap-3 bg-mm-surface rounded-2xl px-6 py-5"
               style={{ border: `2px solid ${p.color}`, boxShadow: `0 0 24px ${p.color}44` }}
             >
-              {p.avatarUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={p.avatarUrl}
-                  alt={p.username}
-                  width={80}
-                  height={80}
-                  className="rounded-full"
-                  style={{ outline: `3px solid ${p.color}`, outlineOffset: "3px" }}
+              <div
+                className="rounded-full flex items-center justify-center"
+                style={{
+                  width:      "6rem",
+                  height:     "6rem",
+                  background: `${p.color}18`,
+                  border:     `2px solid ${p.color}`,
+                  boxShadow:  `0 0 20px ${p.color}44`,
+                }}
+              >
+                <PlayerAvatar
+                  config={{ ...(p.avatarConfig ?? DEFAULT_AVATAR), color: p.color }}
+                  size={72}
                 />
-              ) : (
-                <div
-                  className="w-20 h-20 rounded-full flex items-center justify-center font-marker text-3xl"
-                  style={{ background: p.color }}
-                >
-                  {p.username[0].toUpperCase()}
-                </div>
-              )}
+              </div>
               <span className="font-marker text-base" style={{ color: p.color }}>
                 {p.username}
               </span>

@@ -1,11 +1,25 @@
 // Database row types matching supabase/schema.sql
 
+// ── Avatar ────────────────────────────────────────────────────────────────────
+
+export type AvatarShape     = 'spray-can' | 'robot' | 'alien' | 'cat';
+export type AvatarAccessory = 'cap' | 'sunglasses' | 'headphones' | 'crown' | 'none';
+
+export interface AvatarConfig {
+  shape:     AvatarShape;
+  color:     string;
+  accessory: AvatarAccessory;
+}
+
+// ── Players ───────────────────────────────────────────────────────────────────
+
 export interface Player {
-  id: string;
-  clerk_id: string;
-  username: string;
-  avatar_url: string | null;
-  created_at: string;
+  id:            string;
+  clerk_id:      string;
+  username:      string;
+  avatar_url:    string | null;
+  avatar_config: AvatarConfig | null;
+  created_at:    string;
 }
 
 export interface GameSession {
