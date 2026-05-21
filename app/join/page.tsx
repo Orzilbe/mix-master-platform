@@ -137,11 +137,12 @@ export default function JoinPage() {
 
     const emitJoin = () => {
       const cfg = avatarConfigRef.current;
-      console.log("[join] emitting lobby-join", { userId: user.id, avatarColor: cfg.color, shape: cfg.shape });
+      console.log("[join] emitting lobby-join", { userId: user.id, color: cfg.color, shape: cfg.shape });
       socket.emit("lobby-join", {
         userId:       user.id,
         username:     user.username ?? user.firstName ?? "Player",
         avatarUrl:    user.imageUrl ?? null,
+        color:        cfg.color,
         avatarConfig: cfg,
       });
     };

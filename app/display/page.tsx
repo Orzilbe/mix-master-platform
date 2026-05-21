@@ -233,19 +233,23 @@ export default function DisplayPage() {
             allow="fullscreen"
           />
         ) : (
-          <div className="flex flex-col items-center gap-8 px-8 py-10 w-full">
+          <div
+            className="flex flex-col items-center gap-8 px-8 py-10 w-full"
+            style={{ overflow: "visible", textAlign: "center" }}
+          >
 
             {/* Logo */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`${GAME_SERVER}/mixMaster.png`}
+              src="/logo.png"
               alt="Mix Master"
               style={{
-                height:    "140px",
+                height:    "160px",
                 width:     "auto",
+                display:   "block",
+                margin:    "0 auto 20px auto",
                 objectFit: "contain",
                 filter:    "drop-shadow(0 0 20px rgba(255,45,120,0.6))",
-                display:   "block",
               }}
             />
 

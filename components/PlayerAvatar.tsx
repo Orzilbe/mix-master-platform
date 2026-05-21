@@ -6,7 +6,6 @@ export type { AvatarShape, AvatarAccessory, AvatarConfig };
 
 export const AVATAR_COLORS: string[] = [
   '#FF2D78', '#00E5FF', '#76FF03', '#FF6D00',
-  '#D500F9', '#FFD600', '#FF1744', '#FFFFFF',
 ];
 
 export const AVATAR_SHAPES: { id: AvatarShape; label: string }[] = [
