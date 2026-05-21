@@ -103,6 +103,10 @@ CREATE POLICY "sessions: public read"   ON game_sessions    FOR SELECT USING (tr
 CREATE POLICY "champions: public read"  ON weekly_champions FOR SELECT USING (true);
 CREATE POLICY "locations: public read"  ON locations        FOR SELECT USING (true);
 
+-- Views don't inherit RLS policies — grant SELECT explicitly
+-- (Code already uses supabase-admin to bypass this, but belt-and-suspenders)
+GRANT SELECT ON weekly_leaderboard TO anon, authenticated;
+
 -- Writes go through the service-role key (server-side API routes only)
 CREATE POLICY "players: service insert"  ON players       FOR INSERT WITH CHECK (true);
 CREATE POLICY "players: service update"  ON players       FOR UPDATE USING (true);

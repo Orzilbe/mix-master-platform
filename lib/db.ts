@@ -99,7 +99,10 @@ export async function getWeeklyLeaderboard(
   const isoWeek = getISOWeek(now);
   const isoYear = getISOYear(now);
 
-  const { data, error } = await supabase
+  // Use service-role client — the weekly_leaderboard VIEW lacks an anon GRANT
+  // so the anon client always returns zero rows even when data exists.
+  const admin = supabaseAdmin();
+  const { data, error } = await admin
     .from("weekly_leaderboard")
     .select("*")
     .eq("week_number", isoWeek)
