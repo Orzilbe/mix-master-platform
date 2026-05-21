@@ -42,12 +42,24 @@ function weekCountdown(): string {
   return `${d}d ${h}h ${m}m`;
 }
 
+type AdminLoc = { name: string; lat: number; lon: number; radius_m: number; is_active: boolean } | null;
+
 export default function DisplayPage() {
   const [phase, setPhase]                   = useState<Phase>("lobby");
   const [players, setPlayers]               = useState<LobbyPlayer[]>([]);
   const [displayData, setDisplayData]       = useState<DisplayData>({ board: [], champion: null });
   const [countdown, setCountdown]           = useState(weekCountdown());
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
+  // Admin panel
+  const [showAdmin,    setShowAdmin]    = useState(false);
+  const [adminLoc,     setAdminLoc]     = useState<AdminLoc>(null);
+  const [adminName,    setAdminName]    = useState("Mix Master Club");
+  const [adminRadius,  setAdminRadius]  = useState(200);
+  const [adminLat,     setAdminLat]     = useState<number | null>(null);
+  const [adminLng,     setAdminLng]     = useState<number | null>(null);
+  const [adminStatus,  setAdminStatus]  = useState<string | null>(null);
+  const [adminSaving,  setAdminSaving]  = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const rowRefs   = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -108,6 +120,78 @@ export default function DisplayPage() {
     const id = setInterval(() => setCountdown(weekCountdown()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  /* ── Admin panel init ───────────────────────────────────────────── */
+  useEffect(() => {
+    const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
+    if (!isAdmin) return;
+    setShowAdmin(true);
+    fetch("/api/location/status")
+      .then(r => r.json())
+      .then(({ location }) => {
+        if (!location) return;
+        setAdminLoc(location);
+        setAdminName(location.name);
+        setAdminRadius(location.radius_m);
+        setAdminLat(location.lat);
+        setAdminLng(location.lon);
+      })
+      .catch(() => {});
+  }, []);
+
+  const adminGPS = () => {
+    if (!navigator.geolocation) { setAdminStatus("GPS not available"); return; }
+    setAdminStatus("Getting location…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setAdminLat(pos.coords.latitude);
+        setAdminLng(pos.coords.longitude);
+        setAdminStatus("Got GPS coords");
+      },
+      () => setAdminStatus("GPS denied — check browser permissions"),
+      { timeout: 15_000 },
+    );
+  };
+
+  const adminSave = async () => {
+    if (adminLat == null || adminLng == null) { setAdminStatus("Get GPS first"); return; }
+    setAdminSaving(true);
+    setAdminStatus(null);
+    try {
+      const res = await fetch("/api/location/set", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ lat: adminLat, lng: adminLng, name: adminName, radius_meters: adminRadius }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAdminStatus(`Error: ${data.error ?? res.status}`); return; }
+      setAdminLoc(data.location);
+      setAdminStatus("Location saved!");
+    } catch {
+      setAdminStatus("Save failed");
+    } finally {
+      setAdminSaving(false);
+    }
+  };
+
+  const adminToggle = async (active: boolean) => {
+    setAdminSaving(true);
+    try {
+      const res = await fetch("/api/location/activate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ active }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAdminStatus(`Error: ${data.error ?? res.status}`); return; }
+      setAdminLoc(prev => prev ? { ...prev, is_active: active } : null);
+      setAdminStatus(active ? "Venue is OPEN" : "Venue is CLOSED");
+    } catch {
+      setAdminStatus("Toggle failed");
+    } finally {
+      setAdminSaving(false);
+    }
+  };
 
   /* ── Derived ─────────────────────────────────────────────────────── */
   const activeUserIds = new Set(players.map(p => p.userId));
@@ -327,6 +411,125 @@ export default function DisplayPage() {
         {sidebarCompact}
         {sidebarFull}
       </aside>
+
+      {/* Admin panel — shown only when ?admin=true */}
+      {showAdmin && (
+        <div
+          className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-80"
+          style={{
+            background: "rgba(10,10,18,0.96)",
+            border:     "1px solid rgba(0,229,255,.25)",
+            boxShadow:  "0 0 40px rgba(0,229,255,.15)",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <p className="font-marker text-mm-cyan text-sm">Venue Admin</p>
+            <button onClick={() => setShowAdmin(false)} className="text-white/30 hover:text-white/70 text-lg leading-none">&times;</button>
+          </div>
+
+          {/* Current location status */}
+          {adminLoc && (
+            <div
+              className="px-3 py-2 rounded-xl text-xs font-boogaloo"
+              style={{
+                background: adminLoc.is_active ? "rgba(118,255,3,.1)" : "rgba(255,45,120,.08)",
+                border:     `1px solid ${adminLoc.is_active ? "rgba(118,255,3,.3)" : "rgba(255,45,120,.2)"}`,
+                color:      adminLoc.is_active ? "#76FF03" : "#FF2D78",
+              }}
+            >
+              {adminLoc.is_active ? "OPEN" : "CLOSED"} — {adminLoc.name}
+              <span className="block text-white/30 text-[10px] mt-0.5">
+                {adminLoc.lat.toFixed(5)}, {adminLoc.lon.toFixed(5)} · {adminLoc.radius_m}m
+              </span>
+            </div>
+          )}
+
+          {/* GPS button */}
+          <button
+            onClick={adminGPS}
+            className="font-boogaloo text-sm px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white"
+            style={{ background: "rgba(0,229,255,.12)", border: "1px solid rgba(0,229,255,.2)" }}
+          >
+            📍 Use My Current Location
+          </button>
+
+          {adminLat != null && (
+            <p className="font-boogaloo text-white/40 text-xs text-center">
+              {adminLat.toFixed(5)}, {adminLng?.toFixed(5)}
+            </p>
+          )}
+
+          {/* Name */}
+          <input
+            type="text"
+            value={adminName}
+            onChange={e => setAdminName(e.target.value)}
+            placeholder="Venue name"
+            className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                       px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
+          />
+
+          {/* Radius slider */}
+          <div>
+            <div className="flex justify-between mb-1">
+              <span className="font-boogaloo text-white/40 text-xs">Radius</span>
+              <span className="font-marker text-mm-cyan text-xs">{adminRadius}m</span>
+            </div>
+            <input
+              type="range"
+              min={50} max={500} step={10}
+              value={adminRadius}
+              onChange={e => setAdminRadius(Number(e.target.value))}
+              className="w-full accent-mm-cyan"
+            />
+          </div>
+
+          {/* Save button */}
+          <button
+            onClick={adminSave}
+            disabled={adminSaving || adminLat == null}
+            className="font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: "#00E5FF22", border: "1px solid #00E5FF66" }}
+          >
+            {adminSaving ? "Saving…" : "Save Location"}
+          </button>
+
+          {/* Open / Close venue */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => adminToggle(true)}
+              disabled={adminSaving}
+              className="flex-1 font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: "rgba(118,255,3,.18)", border: "1px solid rgba(118,255,3,.4)" }}
+            >
+              Open Venue
+            </button>
+            <button
+              onClick={() => adminToggle(false)}
+              disabled={adminSaving}
+              className="flex-1 font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: "rgba(255,45,120,.15)", border: "1px solid rgba(255,45,120,.3)" }}
+            >
+              Close Venue
+            </button>
+          </div>
+
+          {/* Status message */}
+          {adminStatus && (
+            <p className="font-boogaloo text-white/60 text-xs text-center">{adminStatus}</p>
+          )}
+
+          {/* Map preview */}
+          {adminLat != null && adminLng != null && (
+            <iframe
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${adminLng - 0.005},${adminLat - 0.003},${adminLng + 0.005},${adminLat + 0.003}&layer=mapnik&marker=${adminLat},${adminLng}`}
+              className="w-full rounded-xl border border-white/10"
+              style={{ height: 160 }}
+              title="Venue map"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
