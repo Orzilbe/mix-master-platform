@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import {
   PlayerAvatar,
@@ -14,6 +14,7 @@ import type { AvatarConfig } from "@/lib/types";
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
   const router = useRouter();
 
   const [loading,     setLoading]     = useState(true);
@@ -264,6 +265,19 @@ export default function ProfilePage() {
           </p>
         )}
       </Section>
+
+      {/* Sign out */}
+      <button
+        onClick={() => signOut({ redirectUrl: "/login" })}
+        className="w-full font-marker text-lg py-4 rounded-2xl text-white/80 transition-all
+                   active:scale-95 hover:text-white mt-4"
+        style={{
+          background: "rgba(255,45,120,.12)",
+          border:     "1px solid rgba(255,45,120,.3)",
+        }}
+      >
+        SIGN OUT
+      </button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
@@ -31,6 +31,7 @@ async function pingHealth(signal: AbortSignal): Promise<HealthResult> {
 
 export default function JoinPage() {
   const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
   const router              = useRouter();
 
   // ── Profile ──────────────────────────────────────────────────────────────
@@ -439,8 +440,14 @@ export default function JoinPage() {
           </div>
         )}
 
-        {/* Settings icon */}
-        <div className="w-full flex justify-end mb-1">
+        {/* Top bar: settings + sign out */}
+        <div className="w-full flex justify-between items-center mb-1">
+          <button
+            onClick={() => signOut({ redirectUrl: "/login" })}
+            className="font-boogaloo text-xs text-white/30 hover:text-mm-pink transition-colors px-2 py-2"
+          >
+            Sign out
+          </button>
           <Link href="/profile" className="p-2 rounded-xl opacity-40 hover:opacity-80 transition-opacity">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" />
