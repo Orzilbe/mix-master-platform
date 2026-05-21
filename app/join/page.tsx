@@ -11,12 +11,15 @@ type ServerState = "checking" | "starting" | "failed" | "ready";
 type Phase = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
 
 // ── Health check — wakes Render's free-tier server before connecting ────────
-async function pingHealth(signal: AbortSignal): Promise<boolean> {
+type HealthResult = { ok: true } | { ok: false; error: string };
+
+async function pingHealth(signal: AbortSignal): Promise<HealthResult> {
   try {
     const res = await fetch(`${GAME_SERVER}/health`, { signal, cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
+    if (res.ok) return { ok: true };
+    return { ok: false, error: `HTTP ${res.status} ${res.statusText}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -27,6 +30,7 @@ export default function JoinPage() {
   // Server wake-up state
   const [serverState, setServerState] = useState<ServerState>("checking");
   const [retryKey, setRetryKey]       = useState(0);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   // Game state
   const [phase, setPhase]           = useState<Phase>("joining");
@@ -64,15 +68,18 @@ export default function JoinPage() {
 
       // Generous timeout: server may take up to 20s to wake on Render free tier
       const timeoutId = setTimeout(() => ac.abort(), 20_000);
-      const ok = await pingHealth(ac.signal);
+      const result = await pingHealth(ac.signal);
       clearTimeout(timeoutId);
 
       if (cancelled) return;
 
-      if (ok) {
+      if (result.ok) {
+        setHealthError(null);
         setServerState("ready");
         return;
       }
+
+      setHealthError(result.error);
 
       // First failure → tell user server is waking up
       if (tries === 0) setServerState("starting");
@@ -194,7 +201,24 @@ export default function JoinPage() {
       <Centered>
         <p className="font-marker text-mm-orange text-2xl">No Connection</p>
         <Muted>Could not reach the game server.</Muted>
-        <Muted>Make sure the game server is running, then try again.</Muted>
+
+        {/* Debug: show exact error from fetch */}
+        {healthError && (
+          <p className="font-mono text-xs text-red-400 bg-black/40 px-3 py-2 rounded-lg max-w-xs break-all">
+            {healthError}
+          </p>
+        )}
+
+        {/* Manual wake link — opens health URL directly in browser, bypassing CORS */}
+        <a
+          href={`${GAME_SERVER}/health`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-boogaloo text-mm-cyan text-sm underline underline-offset-2"
+        >
+          Wake the server manually ↗
+        </a>
+
         <button
           onClick={retry}
           className="mt-2 font-boogaloo text-lg px-8 py-3 rounded-xl text-white"
