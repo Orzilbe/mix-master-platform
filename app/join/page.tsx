@@ -56,9 +56,11 @@ export default function JoinPage() {
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
   const [boardCountdown, setBoardCountdown] = useState(30);
 
-  // ── Mode C: spectator ────────────────────────────────────────────────────
-  const [liveScores, setLiveScores] = useState<LiveScore[]>([]);
-  const [gameEnding, setGameEnding] = useState(false);
+  // ── Mode C: spectator / queue ────────────────────────────────────────────
+  const [liveScores,     setLiveScores]     = useState<LiveScore[]>([]);
+  const [gameEnding,     setGameEnding]     = useState(false);
+  const [queuePosition,  setQueuePosition]  = useState<number | null>(null);
+  const [queueTotal,     setQueueTotal]     = useState(0);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
@@ -150,11 +152,32 @@ export default function JoinPage() {
       setMyColor(color);
       setLiveScores([]);
       setGameEnding(false);
+      setQueuePosition(null);
       setPhase("waiting");
     });
 
+    // Server no longer emits lobby-full (uses queue-position instead), kept as fallback
     socket.on("lobby-full",       () => { setGameEnding(false); setPhase("full");        });
     socket.on("game-in-progress", () => { setGameEnding(false); setPhase("in-progress"); });
+
+    // Queue position update — sent when waiting in line (lobby full or game running)
+    socket.on("queue-position", ({ position, totalWaiting }: { position: number; totalWaiting: number }) => {
+      setQueuePosition(position);
+      setQueueTotal(totalWaiting);
+      setGameEnding(false);
+      // If still in "joining" phase, we're queued for a full lobby
+      if (phaseRef.current === "joining") setPhase("full");
+    });
+
+    // Server promotes us from queue into an active slot
+    socket.on("promoted-to-player", ({ slotId, color }: { slotId: number; color: string }) => {
+      mySlotRef.current = slotId;
+      setMyColor(color);
+      setLiveScores([]);
+      setGameEnding(false);
+      setQueuePosition(null);
+      setPhase("waiting");
+    });
 
     socket.on("game-start", () => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
@@ -186,13 +209,11 @@ export default function JoinPage() {
         phaseRef.current === "full" || phaseRef.current === "in-progress";
 
       if (wasSpectating) {
-        // Auto-rejoin after server lobby reset (8s after game-end + buffer)
+        // Server will either send 'promoted-to-player' (got a slot) or
+        // 'queue-position' (still waiting). Just show the ending animation.
         setGameEnding(true);
-        setTimeout(() => {
-          setGameEnding(false);
-          setLiveScores([]);
-          emitJoin();
-        }, 9_000);
+        // Safety reset if server doesn't respond within 15s
+        setTimeout(() => setGameEnding(false), 15_000);
       } else {
         setWinner(winner?.name ?? null);
         setPhase("game-over");
@@ -438,15 +459,37 @@ export default function JoinPage() {
                 className="font-marker text-2xl"
                 style={{ color: "#FF6D00", textShadow: "0 0 16px #FF6D0066" }}
               >
-                GAME IN PROGRESS
+                {phase === "in-progress" ? "GAME IN PROGRESS" : "LOBBY FULL"}
               </p>
-              <Muted>
-                {phase === "full"
-                  ? "All 4 spots are taken."
-                  : "A game is already running."}
-              </Muted>
-              <p className="font-boogaloo text-white/50 text-sm">
-                You&apos;ll join the next round automatically.
+
+              {queuePosition != null ? (
+                <div className="flex flex-col items-center gap-1">
+                  <p className="font-boogaloo text-white/70 text-lg">
+                    You&apos;re{" "}
+                    <span
+                      className="font-marker text-2xl"
+                      style={{ color: "#FF2D78", textShadow: "0 0 12px #FF2D7888" }}
+                    >
+                      #{queuePosition}
+                    </span>{" "}
+                    in line
+                  </p>
+                  {queueTotal > 1 && (
+                    <p className="font-boogaloo text-white/30 text-sm">
+                      {queueTotal} players waiting
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Muted>
+                  {phase === "full"
+                    ? "All 4 spots are taken."
+                    : "A game is already running."}
+                </Muted>
+              )}
+
+              <p className="font-boogaloo text-white/40 text-sm">
+                You&apos;ll join automatically when a spot opens.
               </p>
             </>
           )}
