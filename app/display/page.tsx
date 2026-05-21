@@ -235,15 +235,17 @@ export default function DisplayPage() {
         ) : (
           <div className="flex flex-col items-center gap-8 px-8 py-10 w-full">
 
-            {/* Logo — larger on the display screen */}
+            {/* Logo */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`${GAME_SERVER}/mixMaster.png`}
               alt="Mix Master"
-              className="object-contain"
               style={{
-                height:  "140px",
-                filter:  "drop-shadow(0 0 20px rgba(255,45,120,.6))",
+                height:    "140px",
+                width:     "auto",
+                objectFit: "contain",
+                filter:    "drop-shadow(0 0 20px rgba(255,45,120,0.6))",
+                display:   "block",
               }}
             />
 
