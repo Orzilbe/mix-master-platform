@@ -7,13 +7,29 @@ import { io, Socket } from "socket.io-client";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 
-type Phase = "connecting" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
+type ServerState = "checking" | "starting" | "failed" | "ready";
+type Phase = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
+
+// ── Health check — wakes Render's free-tier server before connecting ────────
+async function pingHealth(signal: AbortSignal): Promise<boolean> {
+  try {
+    const res = await fetch(`${GAME_SERVER}/health`, { signal, cache: "no-store" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export default function JoinPage() {
   const { user, isLoaded } = useUser();
   const router              = useRouter();
 
-  const [phase, setPhase]           = useState<Phase>("connecting");
+  // Server wake-up state
+  const [serverState, setServerState] = useState<ServerState>("checking");
+  const [retryKey, setRetryKey]       = useState(0);
+
+  // Game state
+  const [phase, setPhase]           = useState<Phase>("joining");
   const [myColor, setMyColor]       = useState("#FF2D78");
   const [respawnCount, setRespawn]  = useState(0);
   const [rank, setRank]             = useState<number | null>(null);
@@ -24,25 +40,76 @@ export default function JoinPage() {
   const socketRef    = useRef<Socket | null>(null);
   const mySlotRef    = useRef<number | null>(null);
   const respawnTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const phaseRef     = useRef<Phase>("connecting");
+  const phaseRef     = useRef<Phase>("joining");
   phaseRef.current   = phase;
 
-  // Redirect unauthenticated users — middleware already does this,
-  // but this catches the brief client-side window before Clerk hydrates.
+  // Redirect unauthenticated users (belt-and-suspenders — middleware handles it too)
   useEffect(() => {
     if (isLoaded && !user) router.replace("/login");
   }, [isLoaded, user, router]);
 
+  // ── Phase 1: health check with progressive messaging ─────────────────────
   useEffect(() => {
     if (!isLoaded || !user) return;
+    setServerState("checking");
+
+    let cancelled = false;
+    const controllers: AbortController[] = [];
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const attempt = async (tries: number) => {
+      if (cancelled) return;
+      const ac = new AbortController();
+      controllers.push(ac);
+
+      // Generous timeout: server may take up to 20s to wake on Render free tier
+      const timeoutId = setTimeout(() => ac.abort(), 20_000);
+      const ok = await pingHealth(ac.signal);
+      clearTimeout(timeoutId);
+
+      if (cancelled) return;
+
+      if (ok) {
+        setServerState("ready");
+        return;
+      }
+
+      // First failure → tell user server is waking up
+      if (tries === 0) setServerState("starting");
+      // Three failures (~60s total) → give up and show retry button
+      if (tries >= 2) { setServerState("failed"); return; }
+
+      retryTimer = setTimeout(() => attempt(tries + 1), 20_000);
+    };
+
+    attempt(0);
+
+    return () => {
+      cancelled = true;
+      controllers.forEach(c => c.abort());
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [isLoaded, user, retryKey]);
+
+  // ── Phase 2: Socket.io — only once server is confirmed alive ─────────────
+  useEffect(() => {
+    if (!isLoaded || !user || serverState !== "ready") return;
 
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
-    socket.emit("lobby-join", {
-      userId:    user.id,
-      username:  user.username ?? user.firstName ?? "Player",
-      avatarUrl: user.imageUrl ?? null,
+    // Emit lobby-join only after the connection is established
+    socket.on("connect", () => {
+      socket.emit("lobby-join", {
+        userId:    user.id,
+        username:  user.username ?? user.firstName ?? "Player",
+        avatarUrl: user.imageUrl ?? null,
+      });
+    });
+
+    socket.on("connect_error", () => {
+      // Server was alive at health check but socket failed — treat as failed
+      setServerState("failed");
     });
 
     socket.on("lobby-join-ack", ({ slotId, color }: { slotId: number; color: string }) => {
@@ -51,7 +118,7 @@ export default function JoinPage() {
       setPhase("waiting");
     });
 
-    socket.on("lobby-full",      () => setPhase("full"));
+    socket.on("lobby-full",       () => setPhase("full"));
     socket.on("game-in-progress", () => setPhase("in-progress"));
 
     socket.on("game-start", () => {
@@ -72,10 +139,7 @@ export default function JoinPage() {
       respawnTimer.current = setInterval(() => {
         t -= 1;
         setRespawn(Math.max(0, t));
-        if (t <= 0) {
-          clearInterval(respawnTimer.current!);
-          setPhase("playing");
-        }
+        if (t <= 0) { clearInterval(respawnTimer.current!); setPhase("playing"); }
       }, 1000);
     });
 
@@ -89,12 +153,14 @@ export default function JoinPage() {
       socket.disconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
     };
-  }, [isLoaded, user]);
+  }, [isLoaded, user, serverState]);
 
   const sendDir = useCallback((dir: string) => {
     if (phaseRef.current !== "playing") return;
     socketRef.current?.emit("player-input", { direction: dir });
   }, []);
+
+  const retry = () => setRetryKey(k => k + 1);
 
   /* ── Render ────────────────────────────────────────────────────────────── */
 
@@ -102,8 +168,47 @@ export default function JoinPage() {
     return <Centered><Spinner /></Centered>;
   }
 
-  if (phase === "connecting") {
-    return <Centered><Spinner /><Muted>Connecting…</Muted></Centered>;
+  // ── Server wake-up screens ────────────────────────────────────────────────
+  if (serverState === "checking") {
+    return (
+      <Centered>
+        <Spinner />
+        <Muted>Connecting to game server…</Muted>
+      </Centered>
+    );
+  }
+
+  if (serverState === "starting") {
+    return (
+      <Centered>
+        <Spinner />
+        <p className="font-marker text-mm-cyan text-xl">Waking up…</p>
+        <Muted>Game server is starting up, please wait.</Muted>
+        <Muted>This can take up to 30 seconds on the first scan.</Muted>
+      </Centered>
+    );
+  }
+
+  if (serverState === "failed") {
+    return (
+      <Centered>
+        <p className="font-marker text-mm-orange text-2xl">No Connection</p>
+        <Muted>Could not reach the game server.</Muted>
+        <Muted>Make sure the game server is running, then try again.</Muted>
+        <button
+          onClick={retry}
+          className="mt-2 font-boogaloo text-lg px-8 py-3 rounded-xl text-white"
+          style={{ background: "#FF2D78", boxShadow: "0 0 20px rgba(255,45,120,.5)" }}
+        >
+          Retry
+        </button>
+      </Centered>
+    );
+  }
+
+  // ── Game phase screens ─────────────────────────────────────────────────────
+  if (phase === "joining") {
+    return <Centered><Spinner /><Muted>Joining…</Muted></Centered>;
   }
 
   if (phase === "full") {
@@ -139,7 +244,7 @@ export default function JoinPage() {
     return (
       <Centered>
         {user.imageUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={user.imageUrl}
             alt={name}
@@ -156,15 +261,11 @@ export default function JoinPage() {
             {name[0].toUpperCase()}
           </div>
         )}
-
         <h1 className="font-marker text-2xl text-white">{name}</h1>
-
-        {/* Color swatch */}
         <div
           className="w-20 h-20 rounded-full border-4 border-white/20"
           style={{ background: myColor, boxShadow: `0 0 40px ${myColor}80` }}
         />
-
         <p className="font-boogaloo text-xl" style={{ color: myColor }}>
           YOU&apos;RE IN! 🎨
         </p>
@@ -198,11 +299,10 @@ export default function JoinPage() {
         className="flex-1 grid gap-2 p-3"
         style={{ gridTemplateColumns: "1fr .5fr 1fr", gridTemplateRows: "1fr .5fr 1fr" }}
       >
-        {/* Row 1 */}
         <Corner />
         <DpadBtn dir="up"    color={myColor} active={activeDir === "up"}    sendDir={sendDir} setActive={setActiveDir}>▲</DpadBtn>
         <Corner />
-        {/* Row 2 */}
+
         <DpadBtn dir="left"  color={myColor} active={activeDir === "left"}  sendDir={sendDir} setActive={setActiveDir}>◀</DpadBtn>
         <div className="rounded-full bg-[#161616] border-2 border-[#252525] flex items-center justify-center">
           <svg width="20" height="20" viewBox="0 0 22 22">
@@ -210,7 +310,7 @@ export default function JoinPage() {
           </svg>
         </div>
         <DpadBtn dir="right" color={myColor} active={activeDir === "right"} sendDir={sendDir} setActive={setActiveDir}>▶</DpadBtn>
-        {/* Row 3 */}
+
         <Corner />
         <DpadBtn dir="down"  color={myColor} active={activeDir === "down"}  sendDir={sendDir} setActive={setActiveDir}>▼</DpadBtn>
         <Corner />
@@ -219,15 +319,11 @@ export default function JoinPage() {
       {/* Death overlay */}
       {phase === "dead" && (
         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-4 z-10">
-          <p
-            className="font-marker text-4xl"
-            style={{ color: "#FF6D00", textShadow: "0 0 20px #FF6D00" }}
-          >
+          <p className="font-marker text-4xl" style={{ color: "#FF6D00", textShadow: "0 0 20px #FF6D00" }}>
             SPRAYED!
           </p>
           <p className="font-boogaloo text-xl text-gray-300">
-            Back in{" "}
-            <span className="font-marker" style={{ color: "#FF6D00" }}>{respawnCount}</span>s…
+            Back in <span className="font-marker" style={{ color: "#FF6D00" }}>{respawnCount}</span>s…
           </p>
         </div>
       )}
@@ -258,9 +354,7 @@ function Muted({ children }: { children: React.ReactNode }) {
 }
 
 function Spinner() {
-  return (
-    <div className="w-8 h-8 border-4 border-mm-cyan border-t-transparent rounded-full animate-spin" />
-  );
+  return <div className="w-8 h-8 border-4 border-mm-cyan border-t-transparent rounded-full animate-spin" />;
 }
 
 function Corner() {
@@ -270,11 +364,8 @@ function Corner() {
 function DpadBtn({
   dir, color, active, sendDir, setActive, children,
 }: {
-  dir: string;
-  color: string;
-  active: boolean;
-  sendDir: (d: string) => void;
-  setActive: (d: string | null) => void;
+  dir: string; color: string; active: boolean;
+  sendDir: (d: string) => void; setActive: (d: string | null) => void;
   children: React.ReactNode;
 }) {
   return (
