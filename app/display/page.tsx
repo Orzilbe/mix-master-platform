@@ -9,7 +9,9 @@ import { GAMES, type GameSlug } from "@/lib/games";
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
 const JOIN_URL    = `${APP_URL}/join`;
-const QR_SRC      = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
+
+const qrSrc = (url: string) =>
+  `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(url)}`;
 
 type LobbyPlayer = {
   slotId:       number;
@@ -464,17 +466,17 @@ export default function DisplayPage() {
         <div className="flex-1 relative overflow-hidden">
           <iframe
             key="los-iframe"
-            src={`${GAME_SERVER}${GAMES["last-one-standing"].displayPath}`}
+            src={`${GAME_SERVER}${GAMES["last-one-standing"].displayPath}?platform=${encodeURIComponent(APP_URL)}`}
             className="absolute inset-0 w-full h-full border-0"
             title="Last One Standing"
             allow="fullscreen"
           />
-          {/* Logo + QR floating in bottom-left so players can scan */}
+          {/* Logo + QR floating in bottom-left — QR points to the LOS controller */}
           <div className="absolute bottom-5 left-5 z-10 flex flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="Mix Master" style={{ height: 48, width: "auto", filter: "drop-shadow(0 0 10px rgba(255,45,120,.6))" }} />
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={QR_SRC} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
+            <img src={qrSrc(`${GAME_SERVER}/last-one-standing/controller`)} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
             <p className="font-boogaloo text-white/60 text-xs tracking-widest uppercase">Scan to join</p>
           </div>
         </div>
@@ -514,7 +516,7 @@ export default function DisplayPage() {
             <div className="flex flex-col items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={QR_SRC}
+                src={qrSrc(JOIN_URL)}
                 alt="Scan to join"
                 width={200}
                 height={200}
