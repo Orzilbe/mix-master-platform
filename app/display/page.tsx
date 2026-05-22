@@ -140,14 +140,16 @@ export default function DisplayPage() {
     return () => clearInterval(id);
   }, []);
 
-  /* ── Admin: detect ?admin=true and fetch current location ─────────── */
+  /* ── Admin: detect ?admin=true, verify auth, then show panel ──────── */
   useEffect(() => {
     const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
     if (!isAdmin) return;
-    setShowAdmin(true);
+
     fetch("/api/location/status")
-      .then(r => r.json())
-      .then(({ location }) => {
+      .then(async r => {
+        if (!r.ok) return; // 403 or error → do not show panel
+        const { location } = await r.json();
+        setShowAdmin(true);
         if (!location) return;
         setAdminLoc(location);
         setAdminName(location.name);
@@ -156,7 +158,6 @@ export default function DisplayPage() {
         setAdminLng(location.lon);
         setLatStr(location.lat.toFixed(6));
         setLngStr(location.lon.toFixed(6));
-        // If map already initialized, update marker
         if (markerRef.current && leafletMapRef.current) {
           markerRef.current.setLatLng([location.lat, location.lon]);
           leafletMapRef.current.setView([location.lat, location.lon], 15);
