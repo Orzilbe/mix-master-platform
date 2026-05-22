@@ -448,14 +448,35 @@ export default function DisplayPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-mm-bg">
 
+      {/* ── LOS mode: full-width iframe + floating QR overlay, no platform sidebar ── */}
+      {activeGame === "last-one-standing" ? (
+        <div className="flex-1 relative overflow-hidden">
+          <iframe
+            key="los-iframe"
+            src={`${GAME_SERVER}${GAMES["last-one-standing"].displayPath}`}
+            className="absolute inset-0 w-full h-full border-0"
+            title="Last One Standing"
+            allow="fullscreen"
+          />
+          {/* Logo + QR floating in bottom-left so players can scan */}
+          <div className="absolute bottom-5 left-5 z-10 flex flex-col items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Mix Master" style={{ height: 48, width: "auto", filter: "drop-shadow(0 0 10px rgba(255,45,120,.6))" }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={QR_SRC} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
+            <p className="font-boogaloo text-white/60 text-xs tracking-widest uppercase">Scan to join</p>
+          </div>
+        </div>
+      ) : (
+
+      /* ── Paper.io mode: lobby content or game iframe + platform sidebar ── */
+      <>
       {/* Left: game iframe or lobby */}
       <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
-        {/* LOS always shows its own display iframe; Paper.io shows iframe only during game */}
-        {(phase === "game" || activeGame === "last-one-standing") ? (
+        {phase === "game" ? (
           <iframe
-            src={activeGame === "last-one-standing"
-              ? `${GAME_SERVER}${GAMES["last-one-standing"].displayPath}`
-              : `${GAME_SERVER}/display?embed=1`}
+            key="paperio-game-iframe"
+            src={`${GAME_SERVER}/display?embed=1`}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
             allow="fullscreen"
@@ -537,7 +558,7 @@ export default function DisplayPage() {
         )}
       </div>
 
-      {/* Right: leaderboard sidebar */}
+      {/* Right: leaderboard sidebar (Paper.io mode only) */}
       <aside
         onMouseEnter={() => { if (phase === "game") setSidebarExpanded(true); }}
         onMouseLeave={() => setSidebarExpanded(false)}
@@ -550,11 +571,13 @@ export default function DisplayPage() {
         {sidebarCompact}
         {sidebarFull}
       </aside>
+      </>
+      )} {/* end Paper.io mode */}
 
       {/* Admin panel — shown only when ?admin=true */}
       {showAdmin && (
         <div
-          className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-96"
+          className="fixed bottom-4 right-4 z-50 flex flex-col gap-4 rounded-2xl p-6 w-[480px]"
           style={{
             background:  "rgba(10,10,18,0.97)",
             border:      "1px solid rgba(0,229,255,.25)",
@@ -732,18 +755,18 @@ export default function DisplayPage() {
                 </span>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               {(Object.values(GAMES) as (typeof GAMES)[GameSlug][]).map(g => (
                 <button
                   key={g.slug}
                   onClick={() => switchGame(g.slug as GameSlug)}
                   disabled={gameSwitching}
-                  className="flex-1 font-marker text-xs py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-50"
+                  className="flex-1 font-marker text-base py-3 px-4 rounded-xl text-white transition-all active:scale-95 disabled:opacity-50"
                   style={{
                     background: activeGame === g.slug ? `${g.color}28` : "rgba(255,255,255,.05)",
-                    border:     `1px solid ${activeGame === g.slug ? g.color : "rgba(255,255,255,.12)"}`,
+                    border:     `2px solid ${activeGame === g.slug ? g.color : "rgba(255,255,255,.15)"}`,
                     color:      activeGame === g.slug ? g.color : "rgba(255,255,255,.5)",
-                    boxShadow:  activeGame === g.slug ? `0 0 12px ${g.color}44` : "none",
+                    boxShadow:  activeGame === g.slug ? `0 0 20px ${g.color}55` : "none",
                   }}
                 >
                   {g.name}

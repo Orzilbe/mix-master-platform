@@ -441,36 +441,6 @@ export default function JoinPage() {
 
   if (phase === "joining") return <Centered><Spinner /><Muted>Joining…</Muted></Centered>;
 
-  // ── LOS redirect screen — shown when today's game is Last One Standing ────
-  if (dailyGame && dailyGame.gameSlug === "last-one-standing") {
-    const ctrlUrl = `${dailyGame.controllerUrl}?userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(name)}&color=${encodeURIComponent(avatarConfig.color)}`;
-    return (
-      <Centered>
-        <span className="text-5xl">🎨</span>
-        <p className="font-boogaloo text-white/40 text-xs uppercase tracking-widest">Today&apos;s Game</p>
-        <p
-          className="font-marker text-3xl"
-          style={{ color: dailyGame.gameColor, textShadow: `0 0 24px ${dailyGame.gameColor}88` }}
-        >
-          {dailyGame.gameName}
-        </p>
-        <Muted>Tap at the right moment or get eliminated!</Muted>
-        <a
-          href={ctrlUrl}
-          className="font-marker text-xl px-10 py-4 rounded-2xl text-white transition-transform hover:scale-105 active:scale-95"
-          style={{
-            background: `${dailyGame.gameColor}22`,
-            border:     `2px solid ${dailyGame.gameColor}`,
-            boxShadow:  `0 0 30px ${dailyGame.gameColor}55`,
-            color:      dailyGame.gameColor,
-          }}
-        >
-          Join Game ▶
-        </a>
-      </Centered>
-    );
-  }
-
   // ── MODE A: Lobby — waiting for game to start ─────────────────────────
   if (phase === "waiting") {
     return (
