@@ -3,6 +3,9 @@
 -- Run this in: Supabase Dashboard → SQL Editor → New query → Run
 -- ══════════════════════════════════════════════════════════════════════════════
 
+-- ── cleanup: unused tables ───────────────────────────────────────────────────
+DROP TABLE IF EXISTS players_tokens;
+
 -- ── players ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS players (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
