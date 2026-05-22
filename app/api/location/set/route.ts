@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   const location = await upsertLocation(
     Number(lat),
     Number(lon),
-    Number(radius_m) || 500,
+    Math.min(Math.max(Number(radius_m) || 500, 50), 5000),
     name ?? "Main Venue",
   );
   return NextResponse.json({ success: true, location });

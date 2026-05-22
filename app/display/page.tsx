@@ -640,7 +640,7 @@ export default function DisplayPage() {
             </div>
             <input
               type="range"
-              min={50} max={500} step={10}
+              min={50} max={5000} step={50}
               value={adminRadius}
               onChange={e => setAdminRadius(Number(e.target.value))}
               className="w-full accent-mm-cyan"
