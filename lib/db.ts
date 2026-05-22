@@ -180,13 +180,15 @@ export async function getAllTimeLeaderboard(limit = 20): Promise<
 // ── Locations ─────────────────────────────────────────────────────────────────
 
 export async function getActiveLocation(): Promise<Location | null> {
-  const { data } = await supabase
+  const admin = supabaseAdmin();
+  const { data, error } = await admin
     .from("locations")
     .select("*")
     .eq("is_active", true)
     .order("updated_at", { ascending: false })
     .limit(1)
     .single();
+  console.log("[getActiveLocation] data=", JSON.stringify(data), "error=", error?.message ?? null);
   return (data as Location) ?? null;
 }
 

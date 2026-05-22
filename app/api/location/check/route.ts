@@ -23,12 +23,17 @@ export async function GET(req: NextRequest) {
 
   try {
     const location = await getActiveLocation();
+    console.log(`[location/check] user=(${lat},${lng}) activeLocation=`, JSON.stringify(location));
+
     if (!location) {
+      console.log("[location/check] no active location → devMode");
       return NextResponse.json({ allowed: true, devMode: true });
     }
 
     const distance = Math.round(haversineMeters(lat, lng, location.lat, location.lon));
     const allowed  = distance <= location.radius_m;
+
+    console.log(`[location/check] distance=${distance}m radius=${location.radius_m}m → ${allowed ? "ALLOWED" : "BLOCKED"}`);
 
     return NextResponse.json({
       allowed,
@@ -36,8 +41,11 @@ export async function GET(req: NextRequest) {
       locationName: location.name,
       distance,
       radius:       location.radius_m,
+      venueLat:     location.lat,
+      venueLon:     location.lon,
     });
-  } catch {
+  } catch (err) {
+    console.error("[location/check] error:", err);
     return NextResponse.json({ allowed: true, devMode: true });
   }
 }

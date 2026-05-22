@@ -67,7 +67,15 @@ export default function JoinPage() {
 
   // Location check
   const [locState, setLocState] = useState<LocState>("idle");
-  const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
+  const [locInfo,  setLocInfo]  = useState<{
+    name: string;
+    distance: number;
+    radius: number;
+    userLat: number;
+    userLon: number;
+    venueLat: number | null;
+    venueLon: number | null;
+  } | null>(null);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
@@ -123,7 +131,15 @@ export default function JoinPage() {
           } else if (data.allowed) {
             setLocState("allowed");
           } else {
-            setLocInfo({ name: data.locationName, distance: data.distance, radius: data.radius });
+            setLocInfo({
+              name:     data.locationName,
+              distance: data.distance,
+              radius:   data.radius,
+              userLat:  lat,
+              userLon:  lng,
+              venueLat: data.venueLat ?? null,
+              venueLon: data.venueLon ?? null,
+            });
             setLocState("blocked");
           }
         } catch {
@@ -371,6 +387,21 @@ export default function JoinPage() {
           <p className="font-marker text-mm-pink text-2xl">{locInfo.distance}m</p>
           <p className="font-boogaloo text-white/25 text-xs">within {locInfo.radius}m to enter</p>
         </div>
+
+        {/* Debug info */}
+        <div
+          className="w-full max-w-xs px-4 py-3 rounded-xl text-left"
+          style={{ background: "rgba(0,0,0,.4)", border: "1px solid rgba(255,255,255,.08)" }}
+        >
+          <p className="font-boogaloo text-white/30 text-xs uppercase tracking-widest mb-2">Debug info</p>
+          <div className="font-mono text-xs space-y-1 text-white/50">
+            <p>Your location:&nbsp;&nbsp;{locInfo.userLat.toFixed(6)}, {locInfo.userLon.toFixed(6)}</p>
+            <p>Venue location: {locInfo.venueLat?.toFixed(6) ?? "—"}, {locInfo.venueLon?.toFixed(6) ?? "—"}</p>
+            <p>Distance:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{locInfo.distance}m</p>
+            <p>Required:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;within {locInfo.radius}m</p>
+          </div>
+        </div>
+
         <button
           onClick={retryLocation}
           className="font-boogaloo text-lg px-8 py-3 rounded-xl text-white"

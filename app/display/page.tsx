@@ -54,7 +54,7 @@ export default function DisplayPage() {
   const [showAdmin,     setShowAdmin]     = useState(false);
   const [adminLoc,      setAdminLoc]      = useState<AdminLoc>(null);
   const [adminName,     setAdminName]     = useState("Mix Master Club");
-  const [adminRadius,   setAdminRadius]   = useState(200);
+  const [adminRadius,   setAdminRadius]   = useState(500);
   const [adminLat,      setAdminLat]      = useState<number | null>(null);
   const [adminLng,      setAdminLng]      = useState<number | null>(null);
   const [adminStatus,   setAdminStatus]   = useState<string | null>(null);
