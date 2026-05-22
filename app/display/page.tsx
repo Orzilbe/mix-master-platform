@@ -264,7 +264,7 @@ export default function DisplayPage() {
       const res  = await fetch("/api/location/set", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ lat: adminLat, lng: adminLng, name: adminName, radius_meters: adminRadius }),
+        body:    JSON.stringify({ lat: adminLat, lon: adminLng, name: adminName, radius_m: adminRadius }),
       });
       const data = await res.json();
       if (!res.ok) { setAdminStatus(`Error: ${data.error ?? res.status}`); return; }

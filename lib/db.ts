@@ -117,11 +117,11 @@ export async function getWeeklyLeaderboard(
 // ── Champions ─────────────────────────────────────────────────────────────────
 
 export async function getLatestChampion(): Promise<WeeklyChampion | null> {
-  const { data } = await supabase
+  const admin = supabaseAdmin();
+  const { data } = await admin
     .from("weekly_champions")
-    .select("*, players(username, avatar_url, clerk_id, avatar_config)")
-    .order("week_year",   { ascending: false })
-    .order("week_number", { ascending: false })
+    .select("*, players(username, avatar_config, clerk_id)")
+    .order("crowned_at", { ascending: false })
     .limit(1)
     .single();
   return (data as WeeklyChampion) ?? null;

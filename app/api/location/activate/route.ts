@@ -3,23 +3,12 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 async function checkAdmin(userId: string | null): Promise<{ ok: boolean; reason: string }> {
-  const explicit = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",").map(s => s.trim()).filter(Boolean);
-
   console.log(`[admin/activate] userId=${userId ?? "(not logged in)"} ADMIN_USER_IDS=${process.env.ADMIN_USER_IDS ?? "(not set)"}`);
-
-  if (explicit.length > 0) {
-    const ok = userId != null && explicit.includes(userId);
-    console.log(`[admin/activate] explicit list check → ${ok ? "PASS" : "FAIL"}`);
-    return ok
-      ? { ok: true, reason: "explicit list" }
-      : { ok: false, reason: `userId "${userId}" not in ADMIN_USER_IDS` };
-  }
 
   if (!userId) {
     return {
       ok: false,
-      reason: "No ADMIN_USER_IDS set and not logged in. Log into the platform first, then return to /display?admin=true",
+      reason: "Not logged in. Open /join or /profile, log in, then return to /display?admin=true",
     };
   }
 
@@ -31,14 +20,20 @@ async function checkAdmin(userId: string | null): Promise<{ ok: boolean; reason:
       .order("created_at", { ascending: true })
       .limit(1)
       .single();
-    const ok = data?.clerk_id === userId;
-    console.log(`[admin/activate] first-player check → ${ok ? "PASS" : "FAIL"} (first=${data?.clerk_id})`);
-    return ok
-      ? { ok: true, reason: "first registered player" }
-      : {
-          ok: false,
-          reason: `Not the first player. Add ADMIN_USER_IDS=${userId} to Vercel env vars, or first player is ${data?.clerk_id ?? "unknown"}`,
-        };
+
+    const inExplicitList = (process.env.ADMIN_USER_IDS ?? "")
+      .split(",").map(s => s.trim()).filter(Boolean)
+      .includes(userId);
+    const isFirstPlayer = data?.clerk_id === userId;
+    const ok = inExplicitList || isFirstPlayer;
+
+    console.log(`[admin/activate] explicit=${inExplicitList} firstPlayer=${isFirstPlayer} (first=${data?.clerk_id}) → ${ok ? "PASS" : "FAIL"}`);
+
+    if (ok) return { ok: true, reason: inExplicitList ? "explicit list" : "first registered player" };
+    return {
+      ok: false,
+      reason: `Not authorized. Add ADMIN_USER_IDS=${userId} to Vercel env vars. First registered player is ${data?.clerk_id ?? "unknown"}.`,
+    };
   } catch (err) {
     console.error("[admin/activate] DB error:", err);
     return { ok: false, reason: "DB error checking admin status" };
