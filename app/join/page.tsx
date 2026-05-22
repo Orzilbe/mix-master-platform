@@ -8,15 +8,11 @@ import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
 import { io, Socket } from "socket.io-client";
 
-import { GAMES, type GameSlug } from "@/lib/games";
-
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 
 type ServerState = "checking" | "starting" | "failed" | "ready";
 type Phase       = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
 type LocState    = "idle" | "checking" | "allowed" | "dev" | "denied" | "blocked";
-
-type DailyGame = { gameSlug: GameSlug; gameName: string; gameColor: string; controllerUrl: string; isOverride: boolean } | null;
 
 type MiniRow   = { rank: number; clerk_id: string; username: string; total_score: number };
 type LiveScore = { id: number; rank: number; name: string; color: string; pct: string };
@@ -70,13 +66,8 @@ export default function JoinPage() {
   const [queueTotal,     setQueueTotal]     = useState(0);
 
   // Location check
-  const [locState,      setLocState]      = useState<LocState>("idle");
-  const [locInfo,       setLocInfo]       = useState<{ name: string; distance: number; radius: number } | null>(null);
-  const [locLowAccuracy, setLocLowAccuracy] = useState(false);
-
-  // Daily game
-  const [dailyGame,           setDailyGame]           = useState<DailyGame>(null);
-  const [dailyGameRefreshing, setDailyGameRefreshing] = useState(false);
+  const [locState, setLocState] = useState<LocState>("idle");
+  const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
@@ -123,17 +114,13 @@ export default function JoinPage() {
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        const { latitude: lat, longitude: lng } = pos.coords;
         try {
-          const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
-          if (accuracy)  params.set("accuracy", String(Math.round(accuracy)));
-          if (user?.id)  params.set("userId",   user.id);
-          const res  = await fetch(`/api/location/check?${params}`);
+          const res  = await fetch(`/api/location/check?lat=${lat}&lng=${lng}`);
           const data = await res.json();
           if (data.devMode) {
             setLocState("dev");
           } else if (data.allowed) {
-            if (data.lowAccuracy) setLocLowAccuracy(true);
             setLocState("allowed");
           } else {
             setLocInfo({ name: data.locationName, distance: data.distance, radius: data.radius });
@@ -147,22 +134,6 @@ export default function JoinPage() {
       { timeout: 15_000, maximumAge: 60_000 },
     );
   }, [isLoaded, user, profileReady, locState]);
-
-  const fetchDailyGame = useCallback(() => {
-    setDailyGameRefreshing(true);
-    fetch("/api/game/daily")
-      .then(r => r.json())
-      .then(d => setDailyGame(d))
-      .catch(() => {})
-      .finally(() => setDailyGameRefreshing(false));
-  }, []);
-
-  // 60s polling for daily game while serverState is ready
-  useEffect(() => {
-    if (serverState !== "ready") return;
-    const id = setInterval(fetchDailyGame, 60_000);
-    return () => clearInterval(id);
-  }, [serverState, fetchDailyGame]);
 
   // Phase 1: health check
   useEffect(() => {
@@ -184,11 +155,7 @@ export default function JoinPage() {
       clearTimeout(timeoutId);
       if (cancelled) return;
 
-      if (result.ok) {
-        setServerState("ready");
-        fetchDailyGame();
-        return;
-      }
+      if (result.ok) { setServerState("ready"); return; }
 
       setHealthError(result.error);
       if (tries === 0) setServerState("starting");
@@ -202,7 +169,7 @@ export default function JoinPage() {
       abortControllers.forEach(c => c.abort());
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isLoaded, user, profileReady, locState, retryKey, fetchDailyGame]);
+  }, [isLoaded, user, profileReady, locState, retryKey]);
 
   // ── Phase 2: Socket.io ───────────────────────────────────────────────────
   useEffect(() => {
@@ -336,16 +303,6 @@ export default function JoinPage() {
     socketRef.current?.emit("player-input", { direction: dir });
   }, []);
 
-  const joinLOS = useCallback(() => {
-    if (!user) return;
-    const params = new URLSearchParams({
-      userId:   user.id,
-      username: user.username ?? user.firstName ?? "Player",
-      color:    avatarConfigRef.current.color,
-    });
-    window.location.href = `${GAME_SERVER}/last-one-standing/controller?${params}`;
-  }, [user]);
-
   const retry = () => { setHealthError(null); setRetryKey(k => k + 1); };
 
   const retryLocation = () => setLocState("idle");
@@ -474,48 +431,12 @@ export default function JoinPage() {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
 
-        {/* Daily game banner */}
-        {dailyGame && (
-          <div
-            className="w-full mb-2 px-4 py-2 rounded-xl flex items-center gap-2"
-            style={{
-              background: `${dailyGame.gameColor}12`,
-              border:     `1px solid ${dailyGame.gameColor}44`,
-            }}
-          >
-            <span className="font-boogaloo text-white/30 text-xs uppercase tracking-widest flex-1">Today&apos;s Game</span>
-            <span className="font-marker text-sm" style={{ color: dailyGame.gameColor }}>{dailyGame.gameName}</span>
-            {dailyGame.isOverride && (
-              <span className="font-boogaloo text-[10px] text-yellow-400/60">⚡</span>
-            )}
-            <button
-              onClick={fetchDailyGame}
-              disabled={dailyGameRefreshing}
-              className="text-white/30 hover:text-white/70 transition-colors text-sm leading-none"
-              style={{ transform: dailyGameRefreshing ? "rotate(180deg)" : undefined, transition: "transform 0.4s, color 0.15s" }}
-              aria-label="Refresh daily game"
-            >
-              🔄
-            </button>
-          </div>
-        )}
-
         {/* Dev mode banner */}
         {locState === "dev" && (
-          <div className="w-full mb-2 px-4 py-2 rounded-xl text-center"
+          <div className="w-full mb-4 px-4 py-2 rounded-xl text-center"
                style={{ background: "rgba(255,214,0,.12)", border: "1px solid rgba(255,214,0,.3)" }}>
             <p className="font-boogaloo text-yellow-400 text-sm">
               Dev mode — no active location set
-            </p>
-          </div>
-        )}
-
-        {/* Low GPS accuracy warning */}
-        {locLowAccuracy && (
-          <div className="w-full mb-2 px-4 py-2 rounded-xl text-center"
-               style={{ background: "rgba(255,107,0,.12)", border: "1px solid rgba(255,107,0,.3)" }}>
-            <p className="font-boogaloo text-orange-400 text-sm">
-              📍 Low GPS accuracy — location could not be verified precisely
             </p>
           </div>
         )}
@@ -572,26 +493,8 @@ export default function JoinPage() {
           <p className="font-boogaloo text-xl" style={{ color: myColor }}>
             YOU&apos;RE IN! 🎨
           </p>
-          {dailyGame?.gameSlug !== "last-one-standing" && (
-            <Muted>Waiting for host to start…</Muted>
-          )}
+          <Muted>Waiting for host to start…</Muted>
         </div>
-
-        {/* LOS join button — shown when today's game is Last One Standing */}
-        {dailyGame?.gameSlug === "last-one-standing" && (
-          <div className="flex flex-col items-center gap-3 w-full mb-3">
-            <button
-              onClick={joinLOS}
-              className="w-full max-w-sm py-5 rounded-2xl font-marker text-2xl text-black transition-all hover:scale-105 active:scale-95"
-              style={{ background: "#76FF03", boxShadow: "0 0 40px rgba(118,255,3,.45)" }}
-            >
-              🎨 JOIN LAST ONE STANDING
-            </button>
-            <p className="font-boogaloo text-white/30 text-sm">
-              Tap to open the game controller
-            </p>
-          </div>
-        )}
 
         {/* Divider */}
         <div className="w-full border-t border-white/10 mb-5" />

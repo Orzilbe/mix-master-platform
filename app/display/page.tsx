@@ -4,14 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
-import { GAMES, type GameSlug } from "@/lib/games";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
 const JOIN_URL    = `${APP_URL}/join`;
-
-const qrSrc = (url: string) =>
-  `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(url)}`;
+const QR_SRC      = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
 
 type LobbyPlayer = {
   slotId:       number;
@@ -53,14 +50,7 @@ export default function DisplayPage() {
   const [countdown,       setCountdown]       = useState(weekCountdown());
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
-  // Daily game
-  const [activeGame,    setActiveGame]    = useState<GameSlug>("paperio");
-  const [gameIsOverride, setGameIsOverride] = useState(false);
-  const [gameSwitching, setGameSwitching] = useState(false);
-  const [pendingGame,   setPendingGame]   = useState<GameSlug | null>(null);
-
   // Admin panel
-  const [isAdmin,       setIsAdmin]       = useState(false);
   const [showAdmin,     setShowAdmin]     = useState(false);
   const [adminLoc,      setAdminLoc]      = useState<AdminLoc>(null);
   const [adminName,     setAdminName]     = useState("Mix Master Club");
@@ -150,50 +140,16 @@ export default function DisplayPage() {
     return () => clearInterval(id);
   }, []);
 
-  /* ── Daily game ─────────────────────────────────────────────────── */
+  /* ── Admin: detect ?admin=true, verify auth, then show panel ──────── */
   useEffect(() => {
-    fetch("/api/game/daily")
-      .then(r => r.json())
-      .then(({ gameSlug, isOverride }) => {
-        if (gameSlug in GAMES) setActiveGame(gameSlug as GameSlug);
-        setGameIsOverride(isOverride);
-      })
-      .catch(() => {});
-  }, []);
+    const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
+    if (!isAdmin) return;
 
-  async function switchGame(slug: GameSlug) {
-    setGameSwitching(true);
-    setAdminStatus(null);
-    try {
-      const r = await fetch("/api/game/daily/override", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ gameSlug: slug }),
-      });
-      if (r.ok) {
-        setActiveGame(slug);
-        setPendingGame(null);
-        setGameIsOverride(true);
-        setAdminStatus(`✅ Game switched to ${GAMES[slug].name}!`);
-      } else {
-        setAdminStatus("❌ Failed to switch game");
-      }
-    } catch {
-      setAdminStatus("❌ Network error");
-    } finally {
-      setGameSwitching(false);
-    }
-  }
-
-  /* ── Admin: always check auth silently; auto-open on ?admin=true ──── */
-  useEffect(() => {
     fetch("/api/location/status")
       .then(async r => {
-        if (!r.ok) return; // 403 → not admin, show nothing
+        if (!r.ok) return; // 403 or error → do not show panel
         const { location } = await r.json();
-        setIsAdmin(true);
-        const autoOpen = new URLSearchParams(window.location.search).get("admin") === "true";
-        if (autoOpen) setShowAdmin(true);
+        setShowAdmin(true);
         if (!location) return;
         setAdminLoc(location);
         setAdminName(location.name);
@@ -209,14 +165,6 @@ export default function DisplayPage() {
       })
       .catch(() => {});
   }, []);
-
-  /* ── Admin: destroy Leaflet map when panel closes ───────────────── */
-  useEffect(() => {
-    if (!showAdmin && leafletMapRef.current) {
-      leafletMapRef.current.remove();
-      leafletMapRef.current = null;
-    }
-  }, [showAdmin]);
 
   /* ── Admin: load Leaflet CSS + JS from CDN ───────────────────────── */
   useEffect(() => {
@@ -461,34 +409,10 @@ export default function DisplayPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-mm-bg">
 
-      {/* ── LOS mode: full-width iframe + floating QR overlay, no platform sidebar ── */}
-      {activeGame === "last-one-standing" ? (
-        <div className="flex-1 relative overflow-hidden">
-          <iframe
-            key="los-iframe"
-            src={`${GAME_SERVER}${GAMES["last-one-standing"].displayPath}?platform=${encodeURIComponent(APP_URL)}`}
-            className="absolute inset-0 w-full h-full border-0"
-            title="Last One Standing"
-            allow="fullscreen"
-          />
-          {/* Logo + QR floating in bottom-left — QR always points to /join so Clerk auth runs first */}
-          <div className="absolute bottom-5 left-5 z-10 flex flex-col items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Mix Master" style={{ height: 48, width: "auto", filter: "drop-shadow(0 0 10px rgba(255,45,120,.6))" }} />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrSrc(JOIN_URL)} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
-            <p className="font-boogaloo text-white/60 text-xs tracking-widest uppercase">Scan to join</p>
-          </div>
-        </div>
-      ) : (
-
-      /* ── Paper.io mode: lobby content or game iframe + platform sidebar ── */
-      <>
       {/* Left: game iframe or lobby */}
       <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
         {phase === "game" ? (
           <iframe
-            key="paperio-game-iframe"
             src={`${GAME_SERVER}/display?embed=1`}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
@@ -516,7 +440,7 @@ export default function DisplayPage() {
             <div className="flex flex-col items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={qrSrc(JOIN_URL)}
+                src={QR_SRC}
                 alt="Scan to join"
                 width={200}
                 height={200}
@@ -571,7 +495,7 @@ export default function DisplayPage() {
         )}
       </div>
 
-      {/* Right: leaderboard sidebar (Paper.io mode only) */}
+      {/* Right: leaderboard sidebar */}
       <aside
         onMouseEnter={() => { if (phase === "game") setSidebarExpanded(true); }}
         onMouseLeave={() => setSidebarExpanded(false)}
@@ -584,251 +508,181 @@ export default function DisplayPage() {
         {sidebarCompact}
         {sidebarFull}
       </aside>
-      </>
-      )} {/* end Paper.io mode */}
 
-      {/* Floating admin button — visible to admins when overlay is closed */}
-      {isAdmin && !showAdmin && (
-        <button
-          onClick={() => setShowAdmin(true)}
-          className="fixed bottom-5 right-5 z-40 font-marker text-sm px-4 py-2.5 rounded-2xl text-white transition-all hover:scale-105 active:scale-95"
-          style={{ background: "rgba(0,229,255,.15)", border: "1px solid rgba(0,229,255,.35)", boxShadow: "0 0 20px rgba(0,229,255,.15)" }}
-        >
-          ⚙️ ADMIN
-        </button>
-      )}
-
-      {/* Full-screen admin overlay */}
+      {/* Admin panel — shown only when ?admin=true */}
       {showAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,.88)", backdropFilter: "blur(6px)" }}>
-          <div
-            className="relative w-full max-w-[600px] max-h-[90vh] overflow-y-auto flex flex-col gap-5 rounded-3xl p-8"
-            style={{ background: "rgba(14,14,22,0.99)", border: "1px solid rgba(0,229,255,.25)", boxShadow: "0 0 60px rgba(0,229,255,.12)" }}
+        <div
+          className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-96"
+          style={{
+            background:  "rgba(10,10,18,0.97)",
+            border:      "1px solid rgba(0,229,255,.25)",
+            boxShadow:   "0 0 40px rgba(0,229,255,.12)",
+            maxHeight:   "94vh",
+            overflowY:   "auto",
+          }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between shrink-0">
+            <p className="font-marker text-mm-cyan text-sm">Venue Admin</p>
+            <button onClick={() => setShowAdmin(false)} className="text-white/30 hover:text-white/70 text-xl leading-none">&times;</button>
+          </div>
+
+          {/* Current location status */}
+          {adminLoc && (
+            <div
+              className="px-3 py-2 rounded-xl text-xs font-boogaloo shrink-0"
+              style={{
+                background: adminLoc.is_active ? "rgba(118,255,3,.1)" : "rgba(255,45,120,.08)",
+                border:     `1px solid ${adminLoc.is_active ? "rgba(118,255,3,.3)" : "rgba(255,45,120,.2)"}`,
+                color:      adminLoc.is_active ? "#76FF03" : "#FF2D78",
+              }}
+            >
+              {adminLoc.is_active ? "OPEN" : "CLOSED"} — {adminLoc.name}
+              <span className="block text-white/30 text-[10px] mt-0.5">
+                {adminLoc.lat.toFixed(5)}, {adminLoc.lon.toFixed(5)} · {adminLoc.radius_m}m
+              </span>
+            </div>
+          )}
+
+          {/* Address search */}
+          <div className="flex gap-2 shrink-0">
+            <input
+              type="text"
+              value={addrInput}
+              onChange={e => setAddrInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && searchAddress()}
+              placeholder="Search address…"
+              className="flex-1 bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                         px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
+            />
+            <button
+              onClick={searchAddress}
+              disabled={addrSearching}
+              className="font-boogaloo text-xs px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white shrink-0 disabled:opacity-40"
+              style={{ background: "rgba(0,229,255,.15)", border: "1px solid rgba(0,229,255,.3)" }}
+            >
+              {addrSearching ? "…" : "🔍"}
+            </button>
+          </div>
+
+          {/* GPS button */}
+          <button
+            onClick={adminGPS}
+            className="font-boogaloo text-sm px-3 py-2 rounded-xl text-white/80 transition-all hover:text-white shrink-0"
+            style={{ background: "rgba(0,229,255,.12)", border: "1px solid rgba(0,229,255,.2)" }}
           >
+            📍 Use My Current Location
+          </button>
 
-            {/* Header + close */}
-            <div className="flex items-center justify-between">
-              <p className="font-marker text-mm-cyan text-xl tracking-wide">⚙️ Venue Admin</p>
-              <button
-                onClick={() => { setShowAdmin(false); setAdminStatus(null); setPendingGame(null); }}
-                className="font-boogaloo text-white/30 hover:text-white text-3xl leading-none transition-colors"
-              >&times;</button>
-            </div>
+          {/* Interactive Leaflet map */}
+          <div
+            ref={mapRef}
+            className="w-full rounded-xl overflow-hidden shrink-0"
+            style={{ height: 200, border: "1px solid rgba(255,255,255,.1)" }}
+          />
+          {!leafletLoaded && (
+            <p className="font-boogaloo text-white/20 text-xs text-center -mt-2">Loading map…</p>
+          )}
 
-            {/* ── Today's Game ── */}
-            <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)" }}>
-              <div className="flex items-center gap-3">
-                <p className="font-marker text-sm text-white/50 tracking-widest flex-1">TODAY&apos;S GAME</p>
-                {gameIsOverride && (
-                  <span className="font-boogaloo text-xs px-3 py-1 rounded-full"
-                    style={{ background: "rgba(255,214,0,.15)", color: "#FFD600", border: "1px solid rgba(255,214,0,.35)" }}>
-                    ⚡ Override active
-                  </span>
-                )}
-              </div>
-              {/* Game picker — highlights only, doesn't save yet */}
-              <div className="flex gap-3">
-                {(Object.values(GAMES) as (typeof GAMES)[GameSlug][]).map(g => {
-                  const isSelected = (pendingGame ?? activeGame) === g.slug;
-                  return (
-                    <button
-                      key={g.slug}
-                      onClick={() => setPendingGame(g.slug as GameSlug)}
-                      className="flex-1 font-marker text-lg py-4 px-4 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-95"
-                      style={{
-                        background: isSelected ? `${g.color}28` : "rgba(255,255,255,.04)",
-                        border:     `2px solid ${isSelected ? g.color : "rgba(255,255,255,.12)"}`,
-                        color:      isSelected ? g.color : "rgba(255,255,255,.4)",
-                        boxShadow:  isSelected ? `0 0 24px ${g.color}55` : "none",
-                      }}
-                    >
-                      {g.name}
-                    </button>
-                  );
-                })}
-              </div>
-              {/* Save button — only visible when a change is pending */}
-              {pendingGame && pendingGame !== activeGame && (
-                <button
-                  onClick={() => switchGame(pendingGame)}
-                  disabled={gameSwitching}
-                  className="w-full font-marker text-lg py-4 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-40"
-                  style={{ background: "rgba(118,255,3,.2)", border: "2px solid rgba(118,255,3,.5)", boxShadow: "0 0 20px rgba(118,255,3,.25)" }}
-                >
-                  {gameSwitching ? "Saving…" : "💾 SAVE & ACTIVATE"}
-                </button>
-              )}
-              {adminStatus && adminStatus.startsWith("✅") && (
-                <p className="font-boogaloo text-center" style={{ color: "#76FF03" }}>{adminStatus}</p>
-              )}
-              {adminStatus && adminStatus.startsWith("❌") && (
-                <p className="font-boogaloo text-center text-red-400">{adminStatus}</p>
-              )}
-            </div>
-
-            {/* ── Venue / Location ── */}
-            <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)" }}>
-              <p className="font-marker text-sm text-white/50 tracking-widest">VENUE LOCATION</p>
-
-              {/* Current location status */}
-              {adminLoc && (
-                <div
-                  className="px-4 py-3 rounded-xl font-boogaloo text-sm"
-                  style={{
-                    background: adminLoc.is_active ? "rgba(118,255,3,.1)" : "rgba(255,45,120,.08)",
-                    border:     `1px solid ${adminLoc.is_active ? "rgba(118,255,3,.3)" : "rgba(255,45,120,.2)"}`,
-                    color:      adminLoc.is_active ? "#76FF03" : "#FF2D78",
-                  }}
-                >
-                  {adminLoc.is_active ? "✅ OPEN" : "🔴 CLOSED"} — {adminLoc.name}
-                  <span className="block text-white/30 text-xs mt-0.5">
-                    {adminLoc.lat.toFixed(5)}, {adminLoc.lon.toFixed(5)} · {adminLoc.radius_m}m radius
-                  </span>
-                </div>
-              )}
-
-              {/* Address search */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={addrInput}
-                  onChange={e => setAddrInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && searchAddress()}
-                  placeholder="Search address…"
-                  className="flex-1 bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
-                             px-4 py-2.5 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
-                />
-                <button
-                  onClick={searchAddress}
-                  disabled={addrSearching}
-                  className="font-boogaloo text-sm px-4 py-2.5 rounded-xl text-white/80 transition-all hover:text-white shrink-0 disabled:opacity-40"
-                  style={{ background: "rgba(0,229,255,.15)", border: "1px solid rgba(0,229,255,.3)" }}
-                >
-                  {addrSearching ? "…" : "🔍 Search"}
-                </button>
-              </div>
-
-              {/* GPS button */}
-              <button
-                onClick={adminGPS}
-                className="font-boogaloo text-sm px-4 py-2.5 rounded-xl text-white/80 transition-all hover:text-white"
-                style={{ background: "rgba(0,229,255,.1)", border: "1px solid rgba(0,229,255,.2)" }}
-              >
-                📍 Use My Current Location
-              </button>
-
-              {/* Leaflet map */}
-              <div
-                ref={mapRef}
-                className="w-full rounded-xl overflow-hidden"
-                style={{ height: 220, border: "1px solid rgba(255,255,255,.1)" }}
-              />
-              {!leafletLoaded && (
-                <p className="font-boogaloo text-white/20 text-xs text-center -mt-2">Loading map…</p>
-              )}
-
-              {/* Coordinate inputs */}
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <p className="font-boogaloo text-white/30 text-xs mb-1">Latitude</p>
-                  <input
-                    type="text"
-                    value={latStr}
-                    onChange={e => {
-                      setLatStr(e.target.value);
-                      const n = parseFloat(e.target.value);
-                      if (!isNaN(n) && n >= -90 && n <= 90) {
-                        setAdminLat(n);
-                        if (markerRef.current) markerRef.current.setLatLng([n, adminLng ?? 34.7818]);
-                        if (leafletMapRef.current) leafletMapRef.current.setView([n, adminLng ?? 34.7818]);
-                      }
-                    }}
-                    className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
-                               px-3 py-2 font-mono text-white text-sm outline-none"
-                  />
-                </div>
-                <div className="flex-1">
-                  <p className="font-boogaloo text-white/30 text-xs mb-1">Longitude</p>
-                  <input
-                    type="text"
-                    value={lngStr}
-                    onChange={e => {
-                      setLngStr(e.target.value);
-                      const n = parseFloat(e.target.value);
-                      if (!isNaN(n) && n >= -180 && n <= 180) {
-                        setAdminLng(n);
-                        if (markerRef.current) markerRef.current.setLatLng([adminLat ?? 32.0853, n]);
-                        if (leafletMapRef.current) leafletMapRef.current.setView([adminLat ?? 32.0853, n]);
-                      }
-                    }}
-                    className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
-                               px-3 py-2 font-mono text-white text-sm outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Venue name */}
+          {/* Coordinate inputs */}
+          <div className="flex gap-2 shrink-0">
+            <div className="flex-1">
+              <p className="font-boogaloo text-white/30 text-xs mb-1">Latitude</p>
               <input
                 type="text"
-                value={adminName}
-                onChange={e => setAdminName(e.target.value)}
-                placeholder="Venue name"
+                value={latStr}
+                onChange={e => {
+                  setLatStr(e.target.value);
+                  const n = parseFloat(e.target.value);
+                  if (!isNaN(n) && n >= -90 && n <= 90) {
+                    setAdminLat(n);
+                    if (markerRef.current) markerRef.current.setLatLng([n, adminLng ?? 34.7818]);
+                    if (leafletMapRef.current) leafletMapRef.current.setView([n, adminLng ?? 34.7818]);
+                  }
+                }}
                 className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
-                           px-4 py-2.5 font-boogaloo text-white text-sm outline-none placeholder:text-white/20"
+                           px-2 py-1.5 font-mono text-white text-xs outline-none"
               />
-
-              {/* Radius slider */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="font-boogaloo text-white/40 text-sm">Radius</span>
-                  <span className="font-marker text-mm-cyan text-sm">{adminRadius}m</span>
-                </div>
-                <input
-                  type="range"
-                  min={50} max={5000} step={50}
-                  value={adminRadius}
-                  onChange={e => setAdminRadius(Number(e.target.value))}
-                  className="w-full accent-mm-cyan"
-                />
-              </div>
-
-              {/* Save location button */}
-              <button
-                onClick={adminSave}
-                disabled={adminSaving || adminLat == null}
-                className="font-marker text-base py-3 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
-                style={{ background: "#00E5FF22", border: "1px solid #00E5FF66" }}
-              >
-                {adminSaving ? "Saving…" : "💾 Save Location"}
-              </button>
-
-              {/* Open / Close venue */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => adminToggle(true)}
-                  disabled={adminSaving}
-                  className="flex-1 font-marker text-base py-3 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
-                  style={{ background: "rgba(118,255,3,.18)", border: "1px solid rgba(118,255,3,.4)" }}
-                >
-                  ✅ Open Venue
-                </button>
-                <button
-                  onClick={() => adminToggle(false)}
-                  disabled={adminSaving}
-                  className="flex-1 font-marker text-base py-3 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
-                  style={{ background: "rgba(255,45,120,.15)", border: "1px solid rgba(255,45,120,.3)" }}
-                >
-                  🔴 Close Venue
-                </button>
-              </div>
-
-              {/* Location status message */}
-              {adminStatus && !adminStatus.startsWith("✅") && !adminStatus.startsWith("❌") && (
-                <p className="font-boogaloo text-white/60 text-sm text-center">{adminStatus}</p>
-              )}
             </div>
-
+            <div className="flex-1">
+              <p className="font-boogaloo text-white/30 text-xs mb-1">Longitude</p>
+              <input
+                type="text"
+                value={lngStr}
+                onChange={e => {
+                  setLngStr(e.target.value);
+                  const n = parseFloat(e.target.value);
+                  if (!isNaN(n) && n >= -180 && n <= 180) {
+                    setAdminLng(n);
+                    if (markerRef.current) markerRef.current.setLatLng([adminLat ?? 32.0853, n]);
+                    if (leafletMapRef.current) leafletMapRef.current.setView([adminLat ?? 32.0853, n]);
+                  }
+                }}
+                className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                           px-2 py-1.5 font-mono text-white text-xs outline-none"
+              />
+            </div>
           </div>
+
+          {/* Venue name */}
+          <input
+            type="text"
+            value={adminName}
+            onChange={e => setAdminName(e.target.value)}
+            placeholder="Venue name"
+            className="w-full bg-mm-surface border border-white/10 focus:border-mm-cyan rounded-xl
+                       px-3 py-2 font-boogaloo text-white text-sm outline-none placeholder:text-white/20 shrink-0"
+          />
+
+          {/* Radius slider */}
+          <div className="shrink-0">
+            <div className="flex justify-between mb-1">
+              <span className="font-boogaloo text-white/40 text-xs">Radius</span>
+              <span className="font-marker text-mm-cyan text-xs">{adminRadius}m</span>
+            </div>
+            <input
+              type="range"
+              min={50} max={5000} step={50}
+              value={adminRadius}
+              onChange={e => setAdminRadius(Number(e.target.value))}
+              className="w-full accent-mm-cyan"
+            />
+          </div>
+
+          {/* Save button */}
+          <button
+            onClick={adminSave}
+            disabled={adminSaving || adminLat == null}
+            className="font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40 shrink-0"
+            style={{ background: "#00E5FF22", border: "1px solid #00E5FF66" }}
+          >
+            {adminSaving ? "Saving…" : "Save Location"}
+          </button>
+
+          {/* Open / Close venue */}
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => adminToggle(true)}
+              disabled={adminSaving}
+              className="flex-1 font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: "rgba(118,255,3,.18)", border: "1px solid rgba(118,255,3,.4)" }}
+            >
+              Open Venue
+            </button>
+            <button
+              onClick={() => adminToggle(false)}
+              disabled={adminSaving}
+              className="flex-1 font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: "rgba(255,45,120,.15)", border: "1px solid rgba(255,45,120,.3)" }}
+            >
+              Close Venue
+            </button>
+          </div>
+
+          {/* Status message */}
+          {adminStatus && (
+            <p className="font-boogaloo text-white/60 text-xs text-center shrink-0">{adminStatus}</p>
+          )}
         </div>
       )}
     </div>
