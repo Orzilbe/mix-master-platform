@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
+import { GAMES, type GameSlug } from "@/lib/games";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
@@ -49,6 +50,11 @@ export default function DisplayPage() {
   const [displayData,     setDisplayData]     = useState<DisplayData>({ board: [], champion: null });
   const [countdown,       setCountdown]       = useState(weekCountdown());
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
+  // Daily game
+  const [activeGame,    setActiveGame]    = useState<GameSlug>("paperio");
+  const [gameIsOverride, setGameIsOverride] = useState(false);
+  const [gameSwitching, setGameSwitching] = useState(false);
 
   // Admin panel
   const [showAdmin,     setShowAdmin]     = useState(false);
@@ -139,6 +145,39 @@ export default function DisplayPage() {
     const id = setInterval(() => setCountdown(weekCountdown()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  /* ── Daily game ─────────────────────────────────────────────────── */
+  useEffect(() => {
+    fetch("/api/game/daily")
+      .then(r => r.json())
+      .then(({ gameSlug, isOverride }) => {
+        if (gameSlug in GAMES) setActiveGame(gameSlug as GameSlug);
+        setGameIsOverride(isOverride);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function switchGame(slug: GameSlug) {
+    setGameSwitching(true);
+    try {
+      const r = await fetch("/api/game/daily/override", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ gameSlug: slug }),
+      });
+      if (r.ok) {
+        setActiveGame(slug);
+        setGameIsOverride(true);
+        setAdminStatus(`Switched to ${GAMES[slug].name}`);
+      } else {
+        setAdminStatus("Failed to switch game");
+      }
+    } catch {
+      setAdminStatus("Network error");
+    } finally {
+      setGameSwitching(false);
+    }
+  }
 
   /* ── Admin: detect ?admin=true, verify auth, then show panel ──────── */
   useEffect(() => {
@@ -411,9 +450,12 @@ export default function DisplayPage() {
 
       {/* Left: game iframe or lobby */}
       <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
-        {phase === "game" ? (
+        {/* LOS always shows its own display iframe; Paper.io shows iframe only during game */}
+        {(phase === "game" || activeGame === "last-one-standing") ? (
           <iframe
-            src={`${GAME_SERVER}/display?embed=1`}
+            src={activeGame === "last-one-standing"
+              ? `${GAME_SERVER}${GAMES["last-one-standing"].displayPath}`
+              : `${GAME_SERVER}/display?embed=1`}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
             allow="fullscreen"
@@ -677,6 +719,37 @@ export default function DisplayPage() {
             >
               Close Venue
             </button>
+          </div>
+
+          {/* ── Today's Game ── */}
+          <div className="shrink-0 border-t border-white/10 pt-3 mt-1">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="font-marker text-xs text-white/40 tracking-widest flex-1">TODAY&apos;S GAME</p>
+              {gameIsOverride && (
+                <span className="font-boogaloo text-[10px] px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(255,214,0,.15)", color: "#FFD600", border: "1px solid rgba(255,214,0,.3)" }}>
+                  ⚡ Override
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {(Object.values(GAMES) as (typeof GAMES)[GameSlug][]).map(g => (
+                <button
+                  key={g.slug}
+                  onClick={() => switchGame(g.slug as GameSlug)}
+                  disabled={gameSwitching}
+                  className="flex-1 font-marker text-xs py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-50"
+                  style={{
+                    background: activeGame === g.slug ? `${g.color}28` : "rgba(255,255,255,.05)",
+                    border:     `1px solid ${activeGame === g.slug ? g.color : "rgba(255,255,255,.12)"}`,
+                    color:      activeGame === g.slug ? g.color : "rgba(255,255,255,.5)",
+                    boxShadow:  activeGame === g.slug ? `0 0 12px ${g.color}44` : "none",
+                  }}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Status message */}

@@ -8,11 +8,15 @@ import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
 import { io, Socket } from "socket.io-client";
 
+import { GAMES, type GameSlug } from "@/lib/games";
+
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 
 type ServerState = "checking" | "starting" | "failed" | "ready";
 type Phase       = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
 type LocState    = "idle" | "checking" | "allowed" | "dev" | "denied" | "blocked";
+
+type DailyGame = { gameSlug: GameSlug; gameName: string; gameColor: string; controllerUrl: string; isOverride: boolean } | null;
 
 type MiniRow   = { rank: number; clerk_id: string; username: string; total_score: number };
 type LiveScore = { id: number; rank: number; name: string; color: string; pct: string };
@@ -68,6 +72,9 @@ export default function JoinPage() {
   // Location check
   const [locState, setLocState] = useState<LocState>("idle");
   const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
+
+  // Daily game
+  const [dailyGame, setDailyGame] = useState<DailyGame>(null);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
@@ -155,7 +162,15 @@ export default function JoinPage() {
       clearTimeout(timeoutId);
       if (cancelled) return;
 
-      if (result.ok) { setServerState("ready"); return; }
+      if (result.ok) {
+        setServerState("ready");
+        // Fetch today's active game
+        fetch("/api/game/daily")
+          .then(r => r.json())
+          .then(d => setDailyGame(d))
+          .catch(() => {});
+        return;
+      }
 
       setHealthError(result.error);
       if (tries === 0) setServerState("starting");
@@ -426,10 +441,57 @@ export default function JoinPage() {
 
   if (phase === "joining") return <Centered><Spinner /><Muted>Joining…</Muted></Centered>;
 
+  // ── LOS redirect screen — shown when today's game is Last One Standing ────
+  if (dailyGame && dailyGame.gameSlug === "last-one-standing") {
+    const ctrlUrl = `${dailyGame.controllerUrl}?userId=${encodeURIComponent(user.id)}&username=${encodeURIComponent(name)}&color=${encodeURIComponent(avatarConfig.color)}`;
+    return (
+      <Centered>
+        <span className="text-5xl">🎨</span>
+        <p className="font-boogaloo text-white/40 text-xs uppercase tracking-widest">Today&apos;s Game</p>
+        <p
+          className="font-marker text-3xl"
+          style={{ color: dailyGame.gameColor, textShadow: `0 0 24px ${dailyGame.gameColor}88` }}
+        >
+          {dailyGame.gameName}
+        </p>
+        <Muted>Tap at the right moment or get eliminated!</Muted>
+        <a
+          href={ctrlUrl}
+          className="font-marker text-xl px-10 py-4 rounded-2xl text-white transition-transform hover:scale-105 active:scale-95"
+          style={{
+            background: `${dailyGame.gameColor}22`,
+            border:     `2px solid ${dailyGame.gameColor}`,
+            boxShadow:  `0 0 30px ${dailyGame.gameColor}55`,
+            color:      dailyGame.gameColor,
+          }}
+        >
+          Join Game ▶
+        </a>
+      </Centered>
+    );
+  }
+
   // ── MODE A: Lobby — waiting for game to start ─────────────────────────
   if (phase === "waiting") {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
+
+        {/* Daily game banner */}
+        {dailyGame && (
+          <div
+            className="w-full mb-2 px-4 py-2 rounded-xl flex items-center gap-2"
+            style={{
+              background: `${dailyGame.gameColor}12`,
+              border:     `1px solid ${dailyGame.gameColor}44`,
+            }}
+          >
+            <span className="font-boogaloo text-white/30 text-xs uppercase tracking-widest flex-1">Today&apos;s Game</span>
+            <span className="font-marker text-sm" style={{ color: dailyGame.gameColor }}>{dailyGame.gameName}</span>
+            {dailyGame.isOverride && (
+              <span className="font-boogaloo text-[10px] text-yellow-400/60">⚡</span>
+            )}
+          </div>
+        )}
 
         {/* Dev mode banner */}
         {locState === "dev" && (
