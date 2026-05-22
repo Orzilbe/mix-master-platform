@@ -74,7 +74,8 @@ export default function JoinPage() {
   const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
 
   // Daily game
-  const [dailyGame, setDailyGame] = useState<DailyGame>(null);
+  const [dailyGame,           setDailyGame]           = useState<DailyGame>(null);
+  const [dailyGameRefreshing, setDailyGameRefreshing] = useState(false);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
@@ -142,6 +143,22 @@ export default function JoinPage() {
     );
   }, [isLoaded, user, profileReady, locState]);
 
+  const fetchDailyGame = useCallback(() => {
+    setDailyGameRefreshing(true);
+    fetch("/api/game/daily")
+      .then(r => r.json())
+      .then(d => setDailyGame(d))
+      .catch(() => {})
+      .finally(() => setDailyGameRefreshing(false));
+  }, []);
+
+  // 60s polling for daily game while serverState is ready
+  useEffect(() => {
+    if (serverState !== "ready") return;
+    const id = setInterval(fetchDailyGame, 60_000);
+    return () => clearInterval(id);
+  }, [serverState, fetchDailyGame]);
+
   // Phase 1: health check
   useEffect(() => {
     if (!isLoaded || !user || !profileReady) return;
@@ -164,11 +181,7 @@ export default function JoinPage() {
 
       if (result.ok) {
         setServerState("ready");
-        // Fetch today's active game
-        fetch("/api/game/daily")
-          .then(r => r.json())
-          .then(d => setDailyGame(d))
-          .catch(() => {});
+        fetchDailyGame();
         return;
       }
 
@@ -184,7 +197,7 @@ export default function JoinPage() {
       abortControllers.forEach(c => c.abort());
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isLoaded, user, profileReady, locState, retryKey]);
+  }, [isLoaded, user, profileReady, locState, retryKey, fetchDailyGame]);
 
   // ── Phase 2: Socket.io ───────────────────────────────────────────────────
   useEffect(() => {
@@ -460,6 +473,15 @@ export default function JoinPage() {
             {dailyGame.isOverride && (
               <span className="font-boogaloo text-[10px] text-yellow-400/60">⚡</span>
             )}
+            <button
+              onClick={fetchDailyGame}
+              disabled={dailyGameRefreshing}
+              className="text-white/30 hover:text-white/70 transition-colors text-sm leading-none"
+              style={{ transform: dailyGameRefreshing ? "rotate(180deg)" : undefined, transition: "transform 0.4s, color 0.15s" }}
+              aria-label="Refresh daily game"
+            >
+              🔄
+            </button>
           </div>
         )}
 
