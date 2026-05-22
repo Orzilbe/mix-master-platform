@@ -261,11 +261,13 @@ export default function DisplayPage() {
     if (adminLat == null || adminLng == null) { setAdminStatus("Set a location first"); return; }
     setAdminSaving(true);
     setAdminStatus(null);
+    const payload = { lat: adminLat, lon: adminLng, name: adminName, radius_m: adminRadius };
+    console.log("[adminSave] sending:", payload);
     try {
       const res  = await fetch("/api/location/set", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ lat: adminLat, lon: adminLng, name: adminName, radius_m: adminRadius }),
+        body:    JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) { setAdminStatus(`Error: ${data.error ?? res.status}`); return; }

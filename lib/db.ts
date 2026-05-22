@@ -199,15 +199,42 @@ export async function upsertLocation(
   name = "Main Venue",
 ): Promise<Location> {
   const admin = supabaseAdmin();
-  // Deactivate all, then insert new active one
-  await admin.from("locations").update({ is_active: false }).neq("id", "00000000-0000-0000-0000-000000000000");
-  const { data, error } = await admin
+
+  // Find the canonical (most recently updated) row
+  const { data: existing } = await admin
     .from("locations")
-    .insert({ lat, lon, radius_m, name, is_active: true })
-    .select()
+    .select("id")
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .single();
-  if (error) throw error;
-  return data as Location;
+
+  let result: Location;
+
+  if (existing) {
+    // Update in place — keeps the table at exactly one row
+    const { data, error } = await admin
+      .from("locations")
+      .update({ lat, lon, radius_m, name, is_active: true, updated_at: new Date().toISOString() })
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    result = data as Location;
+
+    // Remove any extra rows that accumulated from previous insert-based saves
+    await admin.from("locations").delete().neq("id", existing.id);
+  } else {
+    const { data, error } = await admin
+      .from("locations")
+      .insert({ lat, lon, radius_m, name, is_active: true })
+      .select()
+      .single();
+    if (error) throw error;
+    result = data as Location;
+  }
+
+  console.log("[upsertLocation] saved:", JSON.stringify(result));
+  return result;
 }
 
 // ── ISO week helpers (no external dependency) ─────────────────────────────────
