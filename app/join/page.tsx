@@ -70,8 +70,9 @@ export default function JoinPage() {
   const [queueTotal,     setQueueTotal]     = useState(0);
 
   // Location check
-  const [locState, setLocState] = useState<LocState>("idle");
-  const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
+  const [locState,      setLocState]      = useState<LocState>("idle");
+  const [locInfo,       setLocInfo]       = useState<{ name: string; distance: number; radius: number } | null>(null);
+  const [locLowAccuracy, setLocLowAccuracy] = useState(false);
 
   // Daily game
   const [dailyGame,           setDailyGame]           = useState<DailyGame>(null);
@@ -122,13 +123,17 @@ export default function JoinPage() {
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         try {
-          const res  = await fetch(`/api/location/check?lat=${lat}&lng=${lng}`);
+          const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+          if (accuracy)  params.set("accuracy", String(Math.round(accuracy)));
+          if (user?.id)  params.set("userId",   user.id);
+          const res  = await fetch(`/api/location/check?${params}`);
           const data = await res.json();
           if (data.devMode) {
             setLocState("dev");
           } else if (data.allowed) {
+            if (data.lowAccuracy) setLocLowAccuracy(true);
             setLocState("allowed");
           } else {
             setLocInfo({ name: data.locationName, distance: data.distance, radius: data.radius });
@@ -331,6 +336,16 @@ export default function JoinPage() {
     socketRef.current?.emit("player-input", { direction: dir });
   }, []);
 
+  const joinLOS = useCallback(() => {
+    if (!user) return;
+    const params = new URLSearchParams({
+      userId:   user.id,
+      username: user.username ?? user.firstName ?? "Player",
+      color:    avatarConfigRef.current.color,
+    });
+    window.location.href = `${GAME_SERVER}/last-one-standing/controller?${params}`;
+  }, [user]);
+
   const retry = () => { setHealthError(null); setRetryKey(k => k + 1); };
 
   const retryLocation = () => setLocState("idle");
@@ -487,10 +502,20 @@ export default function JoinPage() {
 
         {/* Dev mode banner */}
         {locState === "dev" && (
-          <div className="w-full mb-4 px-4 py-2 rounded-xl text-center"
+          <div className="w-full mb-2 px-4 py-2 rounded-xl text-center"
                style={{ background: "rgba(255,214,0,.12)", border: "1px solid rgba(255,214,0,.3)" }}>
             <p className="font-boogaloo text-yellow-400 text-sm">
               Dev mode — no active location set
+            </p>
+          </div>
+        )}
+
+        {/* Low GPS accuracy warning */}
+        {locLowAccuracy && (
+          <div className="w-full mb-2 px-4 py-2 rounded-xl text-center"
+               style={{ background: "rgba(255,107,0,.12)", border: "1px solid rgba(255,107,0,.3)" }}>
+            <p className="font-boogaloo text-orange-400 text-sm">
+              📍 Low GPS accuracy — location could not be verified precisely
             </p>
           </div>
         )}
@@ -547,8 +572,26 @@ export default function JoinPage() {
           <p className="font-boogaloo text-xl" style={{ color: myColor }}>
             YOU&apos;RE IN! 🎨
           </p>
-          <Muted>Waiting for host to start…</Muted>
+          {dailyGame?.gameSlug !== "last-one-standing" && (
+            <Muted>Waiting for host to start…</Muted>
+          )}
         </div>
+
+        {/* LOS join button — shown when today's game is Last One Standing */}
+        {dailyGame?.gameSlug === "last-one-standing" && (
+          <div className="flex flex-col items-center gap-3 w-full mb-3">
+            <button
+              onClick={joinLOS}
+              className="w-full max-w-sm py-5 rounded-2xl font-marker text-2xl text-black transition-all hover:scale-105 active:scale-95"
+              style={{ background: "#76FF03", boxShadow: "0 0 40px rgba(118,255,3,.45)" }}
+            >
+              🎨 JOIN LAST ONE STANDING
+            </button>
+            <p className="font-boogaloo text-white/30 text-sm">
+              Tap to open the game controller
+            </p>
+          </div>
+        )}
 
         {/* Divider */}
         <div className="w-full border-t border-white/10 mb-5" />

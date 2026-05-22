@@ -471,12 +471,12 @@ export default function DisplayPage() {
             title="Last One Standing"
             allow="fullscreen"
           />
-          {/* Logo + QR floating in bottom-left — QR points to the LOS controller */}
+          {/* Logo + QR floating in bottom-left — QR always points to /join so Clerk auth runs first */}
           <div className="absolute bottom-5 left-5 z-10 flex flex-col items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="Mix Master" style={{ height: 48, width: "auto", filter: "drop-shadow(0 0 10px rgba(255,45,120,.6))" }} />
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrSrc(`${GAME_SERVER}/last-one-standing/controller`)} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
+            <img src={qrSrc(JOIN_URL)} alt="Scan to join" width={110} height={110} className="rounded-xl border-4 border-white shadow-xl" />
             <p className="font-boogaloo text-white/60 text-xs tracking-widest uppercase">Scan to join</p>
           </div>
         </div>
