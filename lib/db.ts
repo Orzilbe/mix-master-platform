@@ -188,7 +188,6 @@ export async function getActiveLocation(): Promise<Location | null> {
     .order("updated_at", { ascending: false })
     .limit(1)
     .single();
-  console.log("[getActiveLocation] data=", JSON.stringify(data), "error=", error?.message ?? null);
   return (data as Location) ?? null;
 }
 
