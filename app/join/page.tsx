@@ -802,12 +802,10 @@ function Joystick({ color, onDirection }: { color: string; onDirection: (dir: st
 
       if (dist < DEAD_Z) { dirRef.current = null; return; }
 
-      const deg = ((Math.atan2(-dy, dx) * 180) / Math.PI + 360) % 360;
       const newDir =
-        deg >= 315 || deg < 45  ? "right" :
-        deg >= 45  && deg < 135 ? "up"    :
-        deg >= 135 && deg < 225 ? "left"  :
-                                  "down";
+        Math.abs(dy) > Math.abs(dx)
+          ? (dy < 0 ? "up"   : "down")
+          : (dx < 0 ? "left" : "right");
 
       if (newDir !== dirRef.current) { dirRef.current = newDir; onDirection(newDir); }
     };
