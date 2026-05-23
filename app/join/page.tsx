@@ -226,6 +226,10 @@ export default function JoinPage() {
       setPhase("waiting");
     });
 
+    socket.on("color-assigned", ({ color }: { color: string }) => {
+      setMyColor(color);
+    });
+
     socket.on("game-start", () => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
       setPhase("playing");
