@@ -7,6 +7,7 @@ import Link from "next/link";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
 import { io, Socket } from "socket.io-client";
+import { InstallBanner } from "@/components/InstallBanner";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 
@@ -430,6 +431,7 @@ export default function JoinPage() {
   if (phase === "waiting") {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
+        <InstallBanner />
 
         {/* Dev mode banner */}
         {locState === "dev" && (
@@ -588,6 +590,7 @@ export default function JoinPage() {
   if (phase === "full" || phase === "in-progress") {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-10 pb-6">
+        <InstallBanner />
 
         {/* Status header */}
         <div className="flex flex-col items-center gap-3 mb-6 text-center">
@@ -697,13 +700,16 @@ export default function JoinPage() {
   // ── Game over (active player who just finished a round) ───────────────
   if (phase === "game-over") {
     return (
-      <Centered>
-        <Headline color="#FF6D00">GAME OVER</Headline>
-        {winnerName && (
-          <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
-        )}
-        <Muted>Scan the QR code again to join the next round.</Muted>
-      </Centered>
+      <>
+        <Centered>
+          <Headline color="#FF6D00">GAME OVER</Headline>
+          {winnerName && (
+            <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
+          )}
+          <Muted>Scan the QR code again to join the next round.</Muted>
+        </Centered>
+        <InstallBanner />
+      </>
     );
   }
 

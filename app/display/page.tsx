@@ -446,8 +446,11 @@ export default function DisplayPage() {
                 height={200}
                 className="rounded-2xl border-[5px] border-white shadow-2xl"
               />
-              <p className="font-boogaloo text-white/40 text-lg tracking-widest uppercase">
-                Scan to join the game
+              <p className="font-boogaloo text-white/55 text-lg">
+                First time? Scan to install 📲
+              </p>
+              <p className="font-boogaloo text-white/40 text-lg">
+                Already have it? Scan to join 🎮
               </p>
             </div>
 

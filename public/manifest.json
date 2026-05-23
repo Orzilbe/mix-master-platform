@@ -1,0 +1,14 @@
+{
+  "name": "Mix Master",
+  "short_name": "Mix Master",
+  "description": "Daily mini-games at the Mix Master club",
+  "start_url": "/join",
+  "display": "standalone",
+  "background_color": "#0f0f0f",
+  "theme_color": "#FF2D78",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

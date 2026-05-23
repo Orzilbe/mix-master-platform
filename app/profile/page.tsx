@@ -26,10 +26,21 @@ export default function ProfilePage() {
   const [saveStatus,  setSaveStatus]  = useState<"idle" | "saved" | "error">("idle");
 
   // Stats
-  const [gamesPlayed, setGamesPlayed] = useState(0);
-  const [bestScore,   setBestScore]   = useState(0);
-  const [weeklyRank,  setWeeklyRank]  = useState<number | null>(null);
-  const [weeklyScore, setWeeklyScore] = useState(0);
+  const [gamesPlayed,   setGamesPlayed]   = useState(0);
+  const [bestScore,     setBestScore]     = useState(0);
+  const [weeklyRank,    setWeeklyRank]    = useState<number | null>(null);
+  const [weeklyScore,   setWeeklyScore]   = useState(0);
+  const [notifStatus,   setNotifStatus]   = useState<"idle" | "loading" | "enabled" | "denied" | "error">("idle");
+  const [notifSupported, setNotifSupported] = useState(true);
+
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      setNotifSupported(false);
+      return;
+    }
+    if (Notification.permission === "granted") setNotifStatus("enabled");
+    if (Notification.permission === "denied")  setNotifStatus("denied");
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -84,6 +95,36 @@ export default function ProfilePage() {
   const updateConfig = (next: AvatarConfig) => {
     setConfig(next);
     save(next);
+  };
+
+  const enableNotifications = async () => {
+    setNotifStatus("loading");
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setNotifStatus("denied"); return; }
+
+      const reg  = await navigator.serviceWorker.ready;
+      const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+      let subData: object = { permissionGranted: true };
+      if (vapid) {
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapid),
+        });
+        subData = sub.toJSON();
+      }
+
+      const res = await fetch("/api/profile/push-subscribe", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(subData),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setNotifStatus("enabled");
+    } catch {
+      setNotifStatus("error");
+    }
   };
 
   if (!isLoaded || loading) {
@@ -266,6 +307,34 @@ export default function ProfilePage() {
         )}
       </Section>
 
+      {/* Notifications */}
+      {notifSupported && (
+        <Section label="NOTIFICATIONS">
+          {notifStatus === "enabled" ? (
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl"
+              style={{ background: `${config.color}15`, border: `1px solid ${config.color}33` }}
+            >
+              <span className="text-green-400 text-lg">✅</span>
+              <span className="font-boogaloo text-white/70 text-sm">Notifications enabled!</span>
+            </div>
+          ) : notifStatus === "denied" ? (
+            <p className="font-boogaloo text-white/35 text-sm text-center py-1">
+              🚫 Notifications blocked — enable in browser settings
+            </p>
+          ) : (
+            <button
+              onClick={enableNotifications}
+              disabled={notifStatus === "loading"}
+              className="w-full font-marker text-base py-3 rounded-xl text-white transition-all active:scale-95 disabled:opacity-50"
+              style={{ background: "rgba(255,45,120,.15)", border: "1px solid rgba(255,45,120,.3)" }}
+            >
+              {notifStatus === "loading" ? "Enabling…" : notifStatus === "error" ? "❌ Error — try again" : "🔔 Enable Notifications"}
+            </button>
+          )}
+        </Section>
+      )}
+
       {/* Sign out */}
       <button
         onClick={() => signOut({ redirectUrl: "/login" })}
@@ -289,6 +358,15 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       {children}
     </div>
   );
+}
+
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }
 
 function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
