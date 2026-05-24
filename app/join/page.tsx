@@ -71,9 +71,10 @@ export default function JoinPage() {
   const [queueTotal,     setQueueTotal]     = useState(0);
 
   // ── Tap Frenzy state ──────────────────────────────────────────────────────
-  const [tapCount,      setTapCount]      = useState(0);
-  const [tfSecondsLeft, setTfSecondsLeft] = useState(30);
-  const [tfScores,      setTfScores]      = useState<Array<{ userId: string; username: string; color: string; taps: number; points: number }>>([]);
+  const [tapCount,        setTapCount]        = useState(0);
+  const [tfSecondsLeft,   setTfSecondsLeft]   = useState(30);
+  const [tfScores,        setTfScores]        = useState<Array<{ userId: string; username: string; color: string; taps: number; points: number }>>([]);
+  const [gameSwitchedMsg, setGameSwitchedMsg] = useState<string | null>(null);
 
   // Location check
   const [locState, setLocState] = useState<LocState>("idle");
@@ -87,19 +88,32 @@ export default function JoinPage() {
   const phaseRef     = useRef<Phase>("joining");
   phaseRef.current   = phase;
 
-  // ── Fetch today's game name for banner ───────────────────────────────────
+  // ── Fetch today's game name for banner, polls every 10s ──────────────────
   useEffect(() => {
-    fetch("/api/game/daily")
-      .then(r => r.json())
-      .then(({ gameName, gameSlug }: { gameName: string; gameSlug: string }) => {
-        console.log("[join] daily game slug:", gameSlug);
-        setDailyGameName(gameName);
-        setActiveGameSlug(gameSlug);
-      })
-      .catch(() => {
-        console.log("[join] failed to fetch daily game — defaulting to paperio");
-        setActiveGameSlug("paperio");
-      });
+    let prevSlug: string | null = null;
+
+    const checkGame = () => {
+      fetch("/api/game/daily")
+        .then(r => r.json())
+        .then(({ gameName, gameSlug }: { gameName: string; gameSlug: string }) => {
+          console.log("[join] daily game slug:", gameSlug);
+          if (prevSlug !== null && prevSlug !== gameSlug) {
+            setGameSwitchedMsg(`Game switched to ${gameName}! 🎮`);
+            setTimeout(() => setGameSwitchedMsg(null), 4000);
+          }
+          prevSlug = gameSlug;
+          setDailyGameName(gameName);
+          setActiveGameSlug(gameSlug);
+        })
+        .catch(() => {
+          console.log("[join] failed to fetch daily game — defaulting to paperio");
+          if (prevSlug === null) setActiveGameSlug("paperio");
+        });
+    };
+
+    checkGame();
+    const id = setInterval(checkGame, 10_000);
+    return () => clearInterval(id);
   }, []);
 
   // ── Auth guard ───────────────────────────────────────────────────────────
@@ -345,6 +359,7 @@ export default function JoinPage() {
 
     socket.on("connect", () => {
       const cfg = avatarConfigRef.current;
+      console.log("[join] emitting tf-player-join", { userId: user.id, username: user.username ?? user.firstName ?? "Player", color: cfg.color, avatarConfig: cfg });
       socket.emit("tf-player-join", {
         userId:       user.id,
         username:     user.username ?? user.firstName ?? "Player",
@@ -395,6 +410,31 @@ export default function JoinPage() {
 
     return () => { socket.disconnect(); };
   }, [isLoaded, user, serverState, activeGameSlug]);
+
+  // ── Game-switch toast notification (fixed overlay, works across all phases) ─
+  useEffect(() => {
+    if (!gameSwitchedMsg) return;
+    const el = document.createElement("div");
+    el.textContent = gameSwitchedMsg;
+    Object.assign(el.style, {
+      position:     "fixed",
+      top:          "20px",
+      left:         "50%",
+      transform:    "translateX(-50%)",
+      zIndex:       "9999",
+      background:   "rgba(0,229,255,0.2)",
+      border:       "1px solid rgba(0,229,255,0.5)",
+      boxShadow:    "0 0 20px rgba(0,229,255,0.2)",
+      color:        "white",
+      fontSize:     "18px",
+      padding:      "12px 24px",
+      borderRadius: "16px",
+      whiteSpace:   "nowrap",
+      fontFamily:   "'Permanent Marker', cursive",
+    });
+    document.body.appendChild(el);
+    return () => { if (document.body.contains(el)) document.body.removeChild(el); };
+  }, [gameSwitchedMsg]);
 
   const sendDir = useCallback((dir: string) => {
     if (phaseRef.current !== "playing") return;

@@ -559,10 +559,10 @@ export default function DisplayPage() {
         {sidebarFull}
       </aside>
 
-      {/* Floating gear button — reopens admin panel after close */}
-      {adminVerified && !showAdmin && (
+      {/* Floating gear button — always visible to verified admins, toggles panel */}
+      {adminVerified && (
         <button
-          onClick={() => setShowAdmin(true)}
+          onClick={() => setShowAdmin(s => !s)}
           className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center text-xl"
           style={{ background: "rgba(0,229,255,.2)", border: "1px solid rgba(0,229,255,.5)", boxShadow: "0 0 16px rgba(0,229,255,.2)" }}
         >
