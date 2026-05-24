@@ -45,6 +45,7 @@ function weekCountdown(): string {
 }
 
 export default function DisplayPage() {
+  const [mounted,         setMounted]         = useState(false);
   const [phase,           setPhase]           = useState<Phase>("lobby");
   const [players,         setPlayers]         = useState<LobbyPlayer[]>([]);
   const [displayData,     setDisplayData]     = useState<DisplayData>({ board: [], champion: null });
@@ -111,6 +112,9 @@ export default function DisplayPage() {
       });
     });
   }, [displayData]);
+
+  /* ── Client-only mount flag — prevents admin panel hydration mismatches ─── */
+  useEffect(() => { setMounted(true); }, []);
 
   /* ── Socket.io ───────────────────────────────────────────────────── */
   useEffect(() => {
@@ -560,7 +564,7 @@ export default function DisplayPage() {
       </aside>
 
       {/* Floating gear button — always visible to verified admins, toggles panel */}
-      {adminVerified && (
+      {mounted && adminVerified && (
         <button
           onClick={() => setShowAdmin(s => !s)}
           className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center text-xl"
@@ -571,7 +575,7 @@ export default function DisplayPage() {
       )}
 
       {/* Admin panel — shown only when ?admin=true */}
-      {showAdmin && (
+      {mounted && showAdmin && (
         <div
           className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-96"
           style={{
