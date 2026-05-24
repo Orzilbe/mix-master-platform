@@ -49,7 +49,7 @@ export default function DisplayPage() {
   const [phase,           setPhase]           = useState<Phase>("lobby");
   const [players,         setPlayers]         = useState<LobbyPlayer[]>([]);
   const [displayData,     setDisplayData]     = useState<DisplayData>({ board: [], champion: null });
-  const [countdown,       setCountdown]       = useState(weekCountdown());
+  const [countdown,       setCountdown]       = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Admin panel
@@ -149,6 +149,7 @@ export default function DisplayPage() {
 
   /* ── Week countdown ticker ───────────────────────────────────────── */
   useEffect(() => {
+    setCountdown(weekCountdown());
     const id = setInterval(() => setCountdown(weekCountdown()), 60_000);
     return () => clearInterval(id);
   }, []);
