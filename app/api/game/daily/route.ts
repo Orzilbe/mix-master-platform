@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { GAMES } from "@/lib/games";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const admin = supabaseAdmin();
     const today = new Date().toISOString().split("T")[0];
 
-    const { data } = await admin
+    const { data, error } = await admin
       .from("daily_game")
       .select("game_slug")
       .eq("game_date", today)
@@ -15,8 +17,12 @@ export async function GET() {
       .limit(1)
       .single();
 
+    console.log(`[daily-game] date=${today} row=`, data, error ? `db-error=${error.message}` : "ok");
+
     const slug = (data?.game_slug as string) ?? "paperio";
     const game = GAMES[slug] ?? GAMES["paperio"];
+
+    console.log(`[daily-game] returning slug=${slug}`);
 
     return NextResponse.json({
       gameSlug:       game.slug,
@@ -25,7 +31,8 @@ export async function GET() {
       controllerPath: game.controllerPath,
       color:          game.color,
     });
-  } catch {
+  } catch (err) {
+    console.log("[daily-game] catch — defaulting to paperio:", err);
     const game = GAMES["paperio"];
     return NextResponse.json({
       gameSlug:       game.slug,

@@ -72,6 +72,7 @@ export default function DisplayPage() {
   const [activeGame,    setActiveGame]    = useState("paperio");
   const [gameSaving,    setGameSaving]    = useState(false);
   const [gameStatus,    setGameStatus]    = useState<string | null>(null);
+  const [gameLoaded,    setGameLoaded]    = useState(false);
 
   const socketRef     = useRef<Socket | null>(null);
   const rowRefs       = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -313,10 +314,15 @@ export default function DisplayPage() {
     fetch("/api/game/daily")
       .then(r => r.json())
       .then(({ gameSlug }: { gameSlug: string }) => {
+        console.log("[display] active game on startup:", gameSlug);
         setActiveGame(gameSlug);
         setPendingGame(gameSlug);
+        setGameLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        console.log("[display] failed to fetch daily game — defaulting to paperio");
+        setGameLoaded(true);
+      });
   }, []);
 
   const saveGame = async () => {
@@ -451,9 +457,10 @@ export default function DisplayPage() {
 
       {/* Left: game iframe or lobby */}
       <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
-        {phase === "game" ? (
+        {phase === "game" && gameLoaded ? (
           <iframe
-            src={activeGame === 'tap-frenzy' ? `${GAME_SERVER}/tap-frenzy/display` : `${GAME_SERVER}/display?embed=1`}
+            key={activeGame}
+            src={activeGame === "tap-frenzy" ? `${GAME_SERVER}/tap-frenzy/display` : `${GAME_SERVER}/display?embed=1`}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
             allow="fullscreen"
