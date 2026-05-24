@@ -56,8 +56,9 @@ export default function JoinPage() {
   const [pct,          setPct]     = useState("0");
   const [winnerName,   setWinner]  = useState<string | null>(null);
 
-  // Daily game banner
-  const [dailyGameName, setDailyGameName] = useState<string | null>(null);
+  // Daily game banner + active game routing
+  const [dailyGameName,  setDailyGameName]  = useState<string | null>(null);
+  const [activeGameSlug, setActiveGameSlug] = useState("paperio");
 
   // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
@@ -69,12 +70,18 @@ export default function JoinPage() {
   const [queuePosition,  setQueuePosition]  = useState<number | null>(null);
   const [queueTotal,     setQueueTotal]     = useState(0);
 
+  // ── Tap Frenzy state ──────────────────────────────────────────────────────
+  const [tapCount,      setTapCount]      = useState(0);
+  const [tfSecondsLeft, setTfSecondsLeft] = useState(30);
+  const [tfScores,      setTfScores]      = useState<Array<{ userId: string; username: string; color: string; taps: number; points: number }>>([]);
+
   // Location check
   const [locState, setLocState] = useState<LocState>("idle");
   const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
+  const tfSocketRef  = useRef<Socket | null>(null);
   const mySlotRef    = useRef<number | null>(null);
   const respawnTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef     = useRef<Phase>("joining");
@@ -84,7 +91,10 @@ export default function JoinPage() {
   useEffect(() => {
     fetch("/api/game/daily")
       .then(r => r.json())
-      .then(({ gameName }: { gameName: string }) => setDailyGameName(gameName))
+      .then(({ gameName, gameSlug }: { gameName: string; gameSlug: string }) => {
+        setDailyGameName(gameName);
+        setActiveGameSlug(gameSlug);
+      })
       .catch(() => {});
   }, []);
 
@@ -183,9 +193,9 @@ export default function JoinPage() {
     };
   }, [isLoaded, user, profileReady, locState, retryKey]);
 
-  // ── Phase 2: Socket.io ───────────────────────────────────────────────────
+  // ── Phase 2: Socket.io (Paper.io only) ──────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || !user || serverState !== "ready") return;
+    if (!isLoaded || !user || serverState !== "ready" || activeGameSlug === "tap-frenzy") return;
 
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
@@ -286,7 +296,7 @@ export default function JoinPage() {
       socket.disconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
     };
-  }, [isLoaded, user, serverState]);
+  }, [isLoaded, user, serverState, activeGameSlug]);
 
   // ── Mini-leaderboard polling (Mode A only) ───────────────────────────────
   useEffect(() => {
@@ -314,9 +324,65 @@ export default function JoinPage() {
     };
   }, [phase]);
 
+  // ── Tap Frenzy Socket.io ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isLoaded || !user || serverState !== "ready" || activeGameSlug !== "tap-frenzy") return;
+
+    const socket = io(GAME_SERVER + "/tap-frenzy", { transports: ["websocket", "polling"] });
+    tfSocketRef.current = socket;
+
+    socket.on("connect", () => {
+      const cfg = avatarConfigRef.current;
+      socket.emit("tf-player-join", {
+        userId:       user.id,
+        username:     user.username ?? user.firstName ?? "Player",
+        color:        cfg.color,
+        avatarConfig: cfg,
+      });
+    });
+    socket.on("connect_error", () => setServerState("failed"));
+
+    socket.on("tf-join-ack", ({ color }: { color: string }) => {
+      setMyColor(color);
+      setPhase("waiting");
+    });
+
+    socket.on("tf-game-start", () => {
+      setTapCount(0);
+      setPhase("playing");
+    });
+
+    socket.on("tf-timer", ({ secondsLeft }: { secondsLeft: number }) => {
+      setTfSecondsLeft(secondsLeft);
+    });
+
+    socket.on("tf-tap-update", ({ playerId, count }: { playerId: string; count: number }) => {
+      if (playerId === user.id) setTapCount(count);
+    });
+
+    socket.on("tf-game-end", ({ scores }: { scores: Array<{ userId: string; username: string; color: string; taps: number; points: number }> }) => {
+      setTfScores(scores);
+      setPhase("game-over");
+    });
+
+    socket.on("tf-lobby-reset", () => {
+      setTapCount(0);
+      setTfSecondsLeft(30);
+      setTfScores([]);
+      setPhase("waiting");
+    });
+
+    return () => { socket.disconnect(); };
+  }, [isLoaded, user, serverState, activeGameSlug]);
+
   const sendDir = useCallback((dir: string) => {
     if (phaseRef.current !== "playing") return;
     socketRef.current?.emit("player-input", { direction: dir });
+  }, []);
+
+  const sendTap = useCallback(() => {
+    if (phaseRef.current !== "playing") return;
+    tfSocketRef.current?.emit("tf-tap");
   }, []);
 
   const retry = () => { setHealthError(null); setRetryKey(k => k + 1); };
@@ -726,8 +792,24 @@ export default function JoinPage() {
       <>
         <Centered>
           <Headline color="#FF6D00">GAME OVER</Headline>
-          {winnerName && (
-            <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
+          {activeGameSlug === "tap-frenzy" ? (
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              {tfScores.map((s, i) => (
+                <div
+                  key={s.userId ?? i}
+                  className="flex items-center gap-3 px-3 py-2 rounded-xl"
+                  style={{ background: `${s.color}10`, border: `1px solid ${s.color}44` }}
+                >
+                  <span className="font-marker text-sm w-6 text-center" style={{ color: i === 0 ? "#FFD600" : "rgba(255,255,255,.4)" }}>
+                    {i === 0 ? "👑" : `#${i + 1}`}
+                  </span>
+                  <span className="font-boogaloo text-white flex-1">{s.username}</span>
+                  <span className="font-marker text-sm" style={{ color: s.color }}>{s.taps} taps</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            winnerName && <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
           )}
           <Muted>Scan the QR code again to join the next round.</Muted>
         </Centered>
@@ -760,17 +842,20 @@ export default function JoinPage() {
           {name}
         </span>
         <span className="font-boogaloo text-white/60 text-sm flex-shrink-0">
-          {pct}%
+          {activeGameSlug === "tap-frenzy" ? `${tfSecondsLeft}s` : `${pct}%`}
         </span>
       </div>
 
-      {/* Joystick area */}
+      {/* Controller area */}
       <div className="flex-1 flex items-center justify-center">
-        <Joystick color={myColor} onDirection={sendDir} />
+        {activeGameSlug === "tap-frenzy"
+          ? <TapButton color={myColor} onTap={sendTap} tapCount={tapCount} />
+          : <Joystick color={myColor} onDirection={sendDir} />
+        }
       </div>
 
       {/* Death overlay */}
-      {phase === "dead" && (
+      {phase === "dead" && activeGameSlug !== "tap-frenzy" && (
         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-4 z-10">
           <p
             className="font-marker text-4xl"
@@ -881,6 +966,56 @@ function Joystick({ color, onDirection }: { color: string; onDirection: (dir: st
           pointerEvents: "none",
         }}
       />
+    </div>
+  );
+}
+
+/* ── Tap Frenzy button ──────────────────────────────────────────────────── */
+
+function TapButton({ color, onTap, tapCount }: { color: string; onTap: () => void; tapCount: number }) {
+  const btnRef = useRef<HTMLDivElement>(null);
+
+  const handleTap = () => {
+    onTap();
+    const btn = btnRef.current;
+    if (!btn) return;
+    btn.style.transform = "scale(0.88)";
+    btn.style.boxShadow = `0 0 80px ${color}`;
+    setTimeout(() => {
+      if (btnRef.current) {
+        btnRef.current.style.transform = "scale(1)";
+        btnRef.current.style.boxShadow = `0 0 40px ${color}55`;
+      }
+    }, 100);
+  };
+
+  return (
+    <div
+      ref={btnRef}
+      onClick={handleTap}
+      onTouchStart={e => { e.preventDefault(); handleTap(); }}
+      style={{
+        width:        "260px",
+        height:       "260px",
+        borderRadius: "50%",
+        background:   `${color}18`,
+        border:       `5px solid ${color}`,
+        boxShadow:    `0 0 40px ${color}55`,
+        display:      "flex",
+        flexDirection: "column",
+        alignItems:   "center",
+        justifyContent: "center",
+        cursor:       "pointer",
+        userSelect:   "none",
+        WebkitUserSelect: "none",
+        transition:   "transform 0.1s ease, box-shadow 0.1s ease",
+        touchAction:  "none",
+        flexShrink:   0,
+      } as React.CSSProperties}
+    >
+      <span className="font-marker" style={{ fontSize: "72px", color, lineHeight: 1 }}>{tapCount}</span>
+      <span className="font-boogaloo" style={{ fontSize: "18px", color: "rgba(255,255,255,0.5)", marginTop: 2 }}>taps!</span>
+      <span className="font-marker" style={{ fontSize: "22px", color: `${color}cc`, marginTop: 10, letterSpacing: "0.1em" }}>TAP!</span>
     </div>
   );
 }
