@@ -885,6 +885,7 @@ export default function JoinPage() {
   }
 
   // ── MODE B: Controller — game running, player active ──────────────────
+  console.log('[join] rendering controller, activeGameSlug:', activeGameSlug);
   return (
     <div
       className="fixed inset-0 flex flex-col"
