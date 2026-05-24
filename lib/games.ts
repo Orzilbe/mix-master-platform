@@ -8,6 +8,14 @@ export interface GameDefinition {
 }
 
 export const GAMES: Record<string, GameDefinition> = {
+  'paperio': {
+    slug:           'paperio',
+    name:           'Paper.io',
+    description:    'Conquer the arena with paint!',
+    displayPath:    '/display',
+    controllerPath: '/join',
+    color:          '#FF2D78',
+  },
   'tap-frenzy': {
     slug:           'tap-frenzy',
     name:           'Tap Frenzy',

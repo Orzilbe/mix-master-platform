@@ -56,6 +56,9 @@ export default function JoinPage() {
   const [pct,          setPct]     = useState("0");
   const [winnerName,   setWinner]  = useState<string | null>(null);
 
+  // Daily game banner
+  const [dailyGameName, setDailyGameName] = useState<string | null>(null);
+
   // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
   const [boardCountdown, setBoardCountdown] = useState(30);
@@ -76,6 +79,14 @@ export default function JoinPage() {
   const respawnTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef     = useRef<Phase>("joining");
   phaseRef.current   = phase;
+
+  // ── Fetch today's game name for banner ───────────────────────────────────
+  useEffect(() => {
+    fetch("/api/game/daily")
+      .then(r => r.json())
+      .then(({ gameName }: { gameName: string }) => setDailyGameName(gameName))
+      .catch(() => {});
+  }, []);
 
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -436,6 +447,14 @@ export default function JoinPage() {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
         <InstallBanner />
+
+        {/* Daily game banner */}
+        {dailyGameName && (
+          <div className="w-full mb-3 px-4 py-2 rounded-xl text-center"
+               style={{ background: "rgba(255,45,120,.12)", border: "1px solid rgba(255,45,120,.3)" }}>
+            <p className="font-boogaloo text-mm-pink text-sm">TODAY&apos;S GAME: {dailyGameName}</p>
+          </div>
+        )}
 
         {/* Dev mode banner */}
         {locState === "dev" && (
