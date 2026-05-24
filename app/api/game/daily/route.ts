@@ -8,21 +8,21 @@ export async function GET() {
   try {
     const admin = supabaseAdmin();
     const today = new Date().toISOString().split("T")[0];
+    console.log(`[daily-game] server UTC date=${today}`);
 
     const { data, error } = await admin
       .from("daily_game")
-      .select("game_slug")
-      .eq("game_date", today)
+      .select("game_slug, game_date")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
 
-    console.log(`[daily-game] date=${today} row=`, data, error ? `db-error=${error.message}` : "ok");
+    console.log(`[daily-game] raw query result:`, JSON.stringify(data), error ? `error=${error.message}` : "ok");
 
-    const slug = (data?.game_slug as string) ?? "paperio";
+    const row  = data?.[0];
+    const slug = (row?.game_slug as string) ?? "paperio";
     const game = GAMES[slug] ?? GAMES["paperio"];
 
-    console.log(`[daily-game] returning slug=${slug}`);
+    console.log(`[daily-game] row.game_date=${row?.game_date} slug=${slug} returning=${game.slug}`);
 
     return NextResponse.json({
       gameSlug:       game.slug,
