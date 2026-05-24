@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `mix-master-${CACHE_VERSION}`;
 const APP_SHELL = ['/', '/join', '/profile', '/login', '/offline.html'];
 
