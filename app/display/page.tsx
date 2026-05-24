@@ -311,7 +311,7 @@ export default function DisplayPage() {
 
   /* ── Fetch today's active game ──────────────────────────────────── */
   useEffect(() => {
-    fetch("/api/game/daily")
+    fetch("/api/game/daily?t=" + Date.now(), { cache: "no-store" })
       .then(r => r.json())
       .then(({ gameSlug }: { gameSlug: string }) => {
         console.log("[display] active game on startup:", gameSlug);

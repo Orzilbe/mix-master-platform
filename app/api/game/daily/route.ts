@@ -24,22 +24,34 @@ export async function GET() {
 
     console.log(`[daily-game] row.game_date=${row?.game_date} slug=${slug} returning=${game.slug}`);
 
-    return NextResponse.json({
+    const payload = {
       gameSlug:       game.slug,
       gameName:       game.name,
       displayPath:    game.displayPath,
       controllerPath: game.controllerPath,
       color:          game.color,
+    };
+    return NextResponse.json(payload, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma":        "no-cache",
+      },
     });
   } catch (err) {
     console.log("[daily-game] catch — defaulting to paperio:", err);
     const game = GAMES["paperio"];
-    return NextResponse.json({
+    const payload = {
       gameSlug:       game.slug,
       gameName:       game.name,
       displayPath:    game.displayPath,
       controllerPath: game.controllerPath,
       color:          game.color,
+    };
+    return NextResponse.json(payload, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma":        "no-cache",
+      },
     });
   }
 }

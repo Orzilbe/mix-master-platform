@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: { "Cache-Control": "no-store" } });
 
   // Tell the game server to clear the old game's lobby (fire-and-forget)
   const gameServerUrl = process.env.NEXT_PUBLIC_GAME_SERVER_URL;
@@ -59,5 +59,10 @@ export async function POST(req: NextRequest) {
     }).catch(e => console.log("[override] switch-game call failed:", e.message));
   }
 
-  return NextResponse.json({ success: true, game: data });
+  return NextResponse.json({ success: true, game: data }, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma":        "no-cache",
+    },
+  });
 }
