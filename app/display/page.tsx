@@ -11,6 +11,11 @@ const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.
 const JOIN_URL    = `${APP_URL}/join`;
 const QR_SRC      = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
 
+function gameIframeSrc(slug: string): string {
+  if (slug === "tap-frenzy") return `${GAME_SERVER}/tap-frenzy/display`;
+  return `${GAME_SERVER}/display?embed=1`;
+}
+
 type LobbyPlayer = {
   slotId:       number;
   userId:       string;
@@ -71,6 +76,7 @@ export default function DisplayPage() {
   const [adminVerified, setAdminVerified] = useState(false);
   const [pendingGame,   setPendingGame]   = useState("paperio");
   const [activeGame,    setActiveGame]    = useState("paperio");
+  const [iframeSrc,     setIframeSrc]     = useState("");
   const [gameSaving,    setGameSaving]    = useState(false);
   const [gameStatus,    setGameStatus]    = useState<string | null>(null);
   const [gameLoaded,    setGameLoaded]    = useState(false);
@@ -322,10 +328,12 @@ export default function DisplayPage() {
         console.log("[display] active game on startup:", gameSlug);
         setActiveGame(gameSlug);
         setPendingGame(gameSlug);
+        setIframeSrc(gameIframeSrc(gameSlug));
         setGameLoaded(true);
       })
       .catch(() => {
         console.log("[display] failed to fetch daily game — defaulting to paperio");
+        setIframeSrc(gameIframeSrc("paperio"));
         setGameLoaded(true);
       });
   }, []);
@@ -342,6 +350,7 @@ export default function DisplayPage() {
       const data = await res.json();
       if (!res.ok) { setGameStatus(`Error: ${data.error ?? res.status}`); return; }
       setActiveGame(pendingGame);
+      setIframeSrc(gameIframeSrc(pendingGame));
       setGameStatus("Game updated!");
     } catch {
       setGameStatus("Save failed");
@@ -465,7 +474,7 @@ export default function DisplayPage() {
         {phase === "game" && gameLoaded ? (
           <iframe
             key={activeGame}
-            src={activeGame === "tap-frenzy" ? `${GAME_SERVER}/tap-frenzy/display` : `${GAME_SERVER}/display?embed=1`}
+            src={iframeSrc}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
             allow="fullscreen"
