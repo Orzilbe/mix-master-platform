@@ -24,25 +24,37 @@ async function checkAdmin(userId: string | null): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   const { userId } = auth();
-  if (!(await checkAdmin(userId))) {
+  console.log("[override] POST received userId=", userId);
+
+  const isAdmin = await checkAdmin(userId);
+  console.log("[override] checkAdmin=", isAdmin);
+  if (!isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { gameSlug } = await req.json();
+  const body = await req.json();
+  const { gameSlug } = body;
+  console.log("[override] gameSlug received=", gameSlug, "known=", !!GAMES[gameSlug]);
   if (!GAMES[gameSlug]) {
     return NextResponse.json({ error: "Unknown game slug" }, { status: 400 });
   }
 
   const admin = supabaseAdmin();
   const today = new Date().toISOString().split("T")[0];
+  console.log("[override] UTC date=", today);
 
-  await admin.from("daily_game").delete().eq("game_date", today);
+  const { error: deleteError, count: deleteCount } = await admin
+    .from("daily_game")
+    .delete({ count: "exact" })
+    .eq("game_date", today);
+  console.log("[override] delete rows=", deleteCount, deleteError ? `err=${deleteError.message}` : "ok");
 
   const { data, error } = await admin
     .from("daily_game")
     .insert({ game_slug: gameSlug, game_date: today, is_override: true })
     .select()
     .single();
+  console.log("[override] insert result=", JSON.stringify(data), error ? `err=${error.message}` : "ok");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: { "Cache-Control": "no-store" } });
 
