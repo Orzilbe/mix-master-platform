@@ -91,6 +91,7 @@ export default function JoinPage() {
   // ── Fetch today's game name for banner, polls every 10s ──────────────────
   useEffect(() => {
     let prevSlug: string | null = null;
+    let switchMsgTimer: ReturnType<typeof setTimeout> | null = null;
 
     const checkGame = () => {
       fetch("/api/game/daily")
@@ -98,8 +99,9 @@ export default function JoinPage() {
         .then(({ gameName, gameSlug }: { gameName: string; gameSlug: string }) => {
           console.log("[join] daily game slug:", gameSlug);
           if (prevSlug !== null && prevSlug !== gameSlug) {
+            if (switchMsgTimer) clearTimeout(switchMsgTimer);
             setGameSwitchedMsg(`Game switched to ${gameName}! 🎮`);
-            setTimeout(() => setGameSwitchedMsg(null), 4000);
+            switchMsgTimer = setTimeout(() => setGameSwitchedMsg(null), 4000);
           }
           prevSlug = gameSlug;
           setDailyGameName(gameName);
@@ -113,7 +115,10 @@ export default function JoinPage() {
 
     checkGame();
     const id = setInterval(checkGame, 10_000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (switchMsgTimer) clearTimeout(switchMsgTimer);
+    };
   }, []);
 
   // ── Auth guard ───────────────────────────────────────────────────────────

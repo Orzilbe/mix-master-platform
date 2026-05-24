@@ -14,11 +14,12 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { userId, territory_pct } = body as {
+  const { userId, territory_pct, gameSlug } = body as {
     userId?: string;
     territory_pct?: number;
+    gameSlug?: string;
   };
-  console.log(`[score] userId=${userId}  territory_pct=${territory_pct}`);
+  console.log(`[score] userId=${userId}  territory_pct=${territory_pct}  gameSlug=${gameSlug}`);
 
   if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   if (territory_pct === undefined) return NextResponse.json({ error: "Missing territory_pct" }, { status: 400 });
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   console.log(`[score] Saving session: score=${score} (${territory_pct.toFixed(1)}%)`);
 
   try {
-    await saveGameSession(player.id, score);
+    await saveGameSession(player.id, score, gameSlug ?? "mix-master-arena");
     console.log(`[score] Saved successfully for player=${player.id}`);
     return NextResponse.json({ success: true });
   } catch (err) {
