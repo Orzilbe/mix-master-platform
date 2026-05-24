@@ -58,7 +58,7 @@ export default function JoinPage() {
 
   // Daily game banner + active game routing
   const [dailyGameName,  setDailyGameName]  = useState<string | null>(null);
-  const [activeGameSlug, setActiveGameSlug] = useState("paperio");
+  const [activeGameSlug, setActiveGameSlug] = useState<string | null>(null); // null = not yet fetched
 
   // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
@@ -92,10 +92,14 @@ export default function JoinPage() {
     fetch("/api/game/daily")
       .then(r => r.json())
       .then(({ gameName, gameSlug }: { gameName: string; gameSlug: string }) => {
+        console.log("[join] daily game slug:", gameSlug);
         setDailyGameName(gameName);
         setActiveGameSlug(gameSlug);
       })
-      .catch(() => {});
+      .catch(() => {
+        console.log("[join] failed to fetch daily game — defaulting to paperio");
+        setActiveGameSlug("paperio");
+      });
   }, []);
 
   // ── Auth guard ───────────────────────────────────────────────────────────
@@ -195,7 +199,8 @@ export default function JoinPage() {
 
   // ── Phase 2: Socket.io (Paper.io only) ──────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || !user || serverState !== "ready" || activeGameSlug === "tap-frenzy") return;
+    if (!isLoaded || !user || serverState !== "ready" || !activeGameSlug || activeGameSlug === "tap-frenzy") return;
+    console.log("[join] connecting to paper.io namespace, slug=", activeGameSlug);
 
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
@@ -292,6 +297,12 @@ export default function JoinPage() {
       }
     });
 
+    // Server kicked us because game switched away from Paper.io
+    socket.on("game-switched", () => {
+      console.log("[join] game switched away from paper.io — reconnecting");
+      setPhase("joining");
+    });
+
     return () => {
       socket.disconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
@@ -327,6 +338,7 @@ export default function JoinPage() {
   // ── Tap Frenzy Socket.io ─────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded || !user || serverState !== "ready" || activeGameSlug !== "tap-frenzy") return;
+    console.log("[join] connecting to tap-frenzy namespace");
 
     const socket = io(GAME_SERVER + "/tap-frenzy", { transports: ["websocket", "polling"] });
     tfSocketRef.current = socket;
@@ -371,6 +383,15 @@ export default function JoinPage() {
       setTfScores([]);
       setPhase("waiting");
     });
+
+    // Server kicked us because game switched away from TF
+    socket.on("tf-game-switched", () => {
+      console.log("[join] game switched away from tap-frenzy — reconnecting");
+      setPhase("joining");
+    });
+
+    // TF lobby full (≥4 players)
+    socket.on("tf-full", () => setPhase("full"));
 
     return () => { socket.disconnect(); };
   }, [isLoaded, user, serverState, activeGameSlug]);
