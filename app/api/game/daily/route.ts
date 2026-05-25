@@ -36,7 +36,7 @@ export async function GET() {
     }
 
     const game = GAMES[slug] ?? GAMES["paperio"];
-    console.log(`[daily-game] returning slug=${game.slug}`);
+    console.log(`[daily-game] GAMES[${slug}]=`, JSON.stringify(game));
 
     const payload = {
       gameSlug:       game.slug,
@@ -45,6 +45,7 @@ export async function GET() {
       controllerPath: game.controllerPath,
       color:          game.color,
     };
+    console.log(`[daily-game] returning payload:`, JSON.stringify(payload));
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -61,6 +62,7 @@ export async function GET() {
       controllerPath: game.controllerPath,
       color:          game.color,
     };
+    console.log(`[daily-game] catch payload:`, JSON.stringify(payload));
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",
