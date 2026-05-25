@@ -7,34 +7,18 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const admin = supabaseAdmin();
-    const today = new Date().toISOString().split("T")[0];
-    console.log(`[daily-game] server UTC date=${today}`);
 
-    // Query today's row first — filtering by date prevents a stale row from
-    // a previous day (with a later created_at) from winning over today's entry.
-    const { data: todayData, error } = await admin
+    // Always return the most recently inserted row — the override route
+    // deletes the previous entry before inserting, so latest == current.
+    const { data, error } = await admin
       .from("daily_game")
       .select("game_slug, game_date")
-      .eq("game_date", today)
       .order("created_at", { ascending: false })
       .limit(1);
 
-    console.log(`[daily-game] today rows:`, JSON.stringify(todayData), error ? `error=${error.message}` : "ok");
+    console.log(`[daily-game] latest row:`, JSON.stringify(data), error ? `error=${error.message}` : "ok");
 
-    let slug = "paperio";
-    if (todayData && todayData.length > 0) {
-      slug = (todayData[0].game_slug as string) ?? "paperio";
-    } else {
-      // No override for today — fall back to most recent row across all dates
-      const { data: latestData } = await admin
-        .from("daily_game")
-        .select("game_slug, game_date")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      console.log(`[daily-game] no today row — latest fallback:`, JSON.stringify(latestData));
-      slug = (latestData?.[0]?.game_slug as string) ?? "paperio";
-    }
-
+    const slug = (data?.[0]?.game_slug as string) ?? "paperio";
     const game = GAMES[slug] ?? GAMES["paperio"];
     console.log(`[daily-game] GAMES[${slug}]=`, JSON.stringify(game));
 
