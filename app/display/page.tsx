@@ -4,17 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
-import { GAMES } from "@/lib/games";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
 const JOIN_URL    = `${APP_URL}/join`;
 const QR_SRC      = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
-
-function gameIframeSrc(slug: string): string {
-  if (slug === "tap-frenzy") return `${GAME_SERVER}/tap-frenzy/display`;
-  return `${GAME_SERVER}/display?embed=1`;
-}
 
 type LobbyPlayer = {
   slotId:       number;
@@ -50,11 +44,10 @@ function weekCountdown(): string {
 }
 
 export default function DisplayPage() {
-  const [mounted,         setMounted]         = useState(false);
   const [phase,           setPhase]           = useState<Phase>("lobby");
   const [players,         setPlayers]         = useState<LobbyPlayer[]>([]);
   const [displayData,     setDisplayData]     = useState<DisplayData>({ board: [], champion: null });
-  const [countdown,       setCountdown]       = useState("");
+  const [countdown,       setCountdown]       = useState(weekCountdown());
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   // Admin panel
@@ -71,15 +64,6 @@ export default function DisplayPage() {
   const [lngStr,        setLngStr]        = useState("");
   const [addrInput,     setAddrInput]     = useState("");
   const [addrSearching, setAddrSearching] = useState(false);
-
-  // Daily game state
-  const [adminVerified, setAdminVerified] = useState(false);
-  const [pendingGame,   setPendingGame]   = useState("paperio");
-  const [activeGame,    setActiveGame]    = useState("paperio");
-  const [iframeSrc,     setIframeSrc]     = useState("");
-  const [gameSaving,    setGameSaving]    = useState(false);
-  const [gameStatus,    setGameStatus]    = useState<string | null>(null);
-  const [gameLoaded,    setGameLoaded]    = useState(false);
 
   const socketRef     = useRef<Socket | null>(null);
   const rowRefs       = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -119,9 +103,6 @@ export default function DisplayPage() {
     });
   }, [displayData]);
 
-  /* ── Client-only mount flag — prevents admin panel hydration mismatches ─── */
-  useEffect(() => { setMounted(true); }, []);
-
   /* ── Socket.io ───────────────────────────────────────────────────── */
   useEffect(() => {
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
@@ -155,7 +136,6 @@ export default function DisplayPage() {
 
   /* ── Week countdown ticker ───────────────────────────────────────── */
   useEffect(() => {
-    setCountdown(weekCountdown());
     const id = setInterval(() => setCountdown(weekCountdown()), 60_000);
     return () => clearInterval(id);
   }, []);
@@ -170,7 +150,6 @@ export default function DisplayPage() {
         if (!r.ok) return; // 403 or error → do not show panel
         const { location } = await r.json();
         setShowAdmin(true);
-        setAdminVerified(true);
         if (!location) return;
         setAdminLoc(location);
         setAdminName(location.name);
@@ -320,47 +299,6 @@ export default function DisplayPage() {
     }
   };
 
-  /* ── Fetch today's active game ──────────────────────────────────── */
-  useEffect(() => {
-    fetch("/api/game/daily?t=" + Date.now(), { cache: "no-store" })
-      .then(r => r.json())
-      .then(({ gameSlug }: { gameSlug: string }) => {
-        console.log("[display] active game on startup:", gameSlug);
-        setActiveGame(gameSlug);
-        setPendingGame(gameSlug);
-        setIframeSrc(gameIframeSrc(gameSlug));
-        setGameLoaded(true);
-      })
-      .catch(() => {
-        console.log("[display] failed to fetch daily game — defaulting to paperio");
-        setIframeSrc(gameIframeSrc("paperio"));
-        setGameLoaded(true);
-      });
-  }, []);
-
-  const saveGame = async () => {
-    setGameSaving(true);
-    setGameStatus(null);
-    console.log("[saveGame] switching to:", pendingGame);
-    console.log("[saveGame] new iframeSrc:", gameIframeSrc(pendingGame));
-    try {
-      const res = await fetch("/api/game/daily/override", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ gameSlug: pendingGame }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setGameStatus(`Error: ${data.error ?? res.status}`); return; }
-      setActiveGame(pendingGame);
-      setIframeSrc(gameIframeSrc(pendingGame));
-      setGameStatus("Game updated!");
-    } catch {
-      setGameStatus("Save failed");
-    } finally {
-      setGameSaving(false);
-    }
-  };
-
   /* ── Derived ─────────────────────────────────────────────────────── */
   const activeUserIds = new Set(players.map(p => p.userId));
   const leaderColor   = displayData.board[0]?.avatar_config?.color ?? "#FF2D78";
@@ -473,10 +411,9 @@ export default function DisplayPage() {
 
       {/* Left: game iframe or lobby */}
       <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
-        {phase === "game" && gameLoaded ? (
+        {phase === "game" ? (
           <iframe
-            key={activeGame}
-            src={iframeSrc}
+            src={`${GAME_SERVER}/display?embed=1`}
             className="absolute inset-0 w-full h-full border-0"
             title="Mix Master"
             allow="fullscreen"
@@ -575,19 +512,8 @@ export default function DisplayPage() {
         {sidebarFull}
       </aside>
 
-      {/* Floating gear button — always visible to verified admins, toggles panel */}
-      {mounted && adminVerified && (
-        <button
-          onClick={() => setShowAdmin(s => !s)}
-          className="fixed bottom-4 right-4 z-50 w-12 h-12 rounded-full flex items-center justify-center text-xl"
-          style={{ background: "rgba(0,229,255,.2)", border: "1px solid rgba(0,229,255,.5)", boxShadow: "0 0 16px rgba(0,229,255,.2)" }}
-        >
-          ⚙️
-        </button>
-      )}
-
       {/* Admin panel — shown only when ?admin=true */}
-      {mounted && showAdmin && (
+      {showAdmin && (
         <div
           className="fixed bottom-4 right-4 z-50 flex flex-col gap-3 rounded-2xl p-4 w-96"
           style={{
@@ -600,47 +526,9 @@ export default function DisplayPage() {
         >
           {/* Header */}
           <div className="flex items-center justify-between shrink-0">
-            <p className="font-marker text-mm-cyan text-sm">Admin Panel</p>
+            <p className="font-marker text-mm-cyan text-sm">Venue Admin</p>
             <button onClick={() => setShowAdmin(false)} className="text-white/30 hover:text-white/70 text-xl leading-none">&times;</button>
           </div>
-
-          {/* TODAY'S GAME selector */}
-          <div className="flex flex-col gap-2 shrink-0">
-            <p className="font-marker text-mm-cyan text-xs uppercase tracking-widest">Today&apos;s Game</p>
-            <div className="flex gap-2">
-              {Object.values(GAMES).map(g => (
-                <button
-                  key={g.slug}
-                  onClick={() => setPendingGame(g.slug)}
-                  className="flex-1 font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95"
-                  style={{
-                    background: pendingGame === g.slug ? `${g.color}33` : "rgba(255,255,255,.06)",
-                    border:     `1px solid ${pendingGame === g.slug ? g.color : "rgba(255,255,255,.12)"}`,
-                    boxShadow:  pendingGame === g.slug ? `0 0 12px ${g.color}44` : "none",
-                  }}
-                >
-                  {g.name}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={saveGame}
-              disabled={gameSaving}
-              className="font-marker text-sm py-2 rounded-xl text-white transition-all active:scale-95 disabled:opacity-40"
-              style={{ background: "#00E5FF22", border: "1px solid #00E5FF66" }}
-            >
-              {gameSaving ? "Saving…" : "💾 SAVE & ACTIVATE"}
-            </button>
-            {gameStatus && (
-              <p className="font-boogaloo text-white/60 text-xs text-center">{gameStatus}</p>
-            )}
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-white/10 shrink-0" />
-
-          {/* Venue admin section */}
-          <p className="font-marker text-mm-cyan text-xs uppercase tracking-widest shrink-0">Venue Admin</p>
 
           {/* Current location status */}
           {adminLoc && (

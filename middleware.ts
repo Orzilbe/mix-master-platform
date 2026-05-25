@@ -14,7 +14,6 @@ const isPublic = createRouteMatcher([
   "/api/leaderboard/display",   // polled by the display screen — no login needed
   // Game server calls this with a shared secret — no Clerk session involved
   "/api/game/score",
-  "/api/game/daily",          // polled by display + join — no login needed
 ]);
 
 export default clerkMiddleware((auth, req) => {
