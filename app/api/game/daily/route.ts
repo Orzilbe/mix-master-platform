@@ -10,19 +10,33 @@ export async function GET() {
     const today = new Date().toISOString().split("T")[0];
     console.log(`[daily-game] server UTC date=${today}`);
 
-    const { data, error } = await admin
+    // Query today's row first — filtering by date prevents a stale row from
+    // a previous day (with a later created_at) from winning over today's entry.
+    const { data: todayData, error } = await admin
       .from("daily_game")
       .select("game_slug, game_date")
+      .eq("game_date", today)
       .order("created_at", { ascending: false })
       .limit(1);
 
-    console.log(`[daily-game] raw query result:`, JSON.stringify(data), error ? `error=${error.message}` : "ok");
+    console.log(`[daily-game] today rows:`, JSON.stringify(todayData), error ? `error=${error.message}` : "ok");
 
-    const row  = data?.[0];
-    const slug = (row?.game_slug as string) ?? "paperio";
+    let slug = "paperio";
+    if (todayData && todayData.length > 0) {
+      slug = (todayData[0].game_slug as string) ?? "paperio";
+    } else {
+      // No override for today — fall back to most recent row across all dates
+      const { data: latestData } = await admin
+        .from("daily_game")
+        .select("game_slug, game_date")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      console.log(`[daily-game] no today row — latest fallback:`, JSON.stringify(latestData));
+      slug = (latestData?.[0]?.game_slug as string) ?? "paperio";
+    }
+
     const game = GAMES[slug] ?? GAMES["paperio"];
-
-    console.log(`[daily-game] row.game_date=${row?.game_date} slug=${slug} returning=${game.slug}`);
+    console.log(`[daily-game] returning slug=${game.slug}`);
 
     const payload = {
       gameSlug:       game.slug,

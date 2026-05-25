@@ -341,6 +341,8 @@ export default function DisplayPage() {
   const saveGame = async () => {
     setGameSaving(true);
     setGameStatus(null);
+    console.log("[saveGame] switching to:", pendingGame);
+    console.log("[saveGame] new iframeSrc:", gameIframeSrc(pendingGame));
     try {
       const res = await fetch("/api/game/daily/override", {
         method:  "POST",
