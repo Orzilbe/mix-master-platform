@@ -50,7 +50,7 @@ export default function DisplayPage() {
     const [countdown,       setCountdown]       = useState(weekCountdown());
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
-    // Track game over results to display natively on the platform tier over the embedded iframe
+    // Track match results natively on the platform layer over the iframe
     const [endGameData,     setEndGameData]     = useState<{ winner: any; scores: any[] } | null>(null);
 
     // Admin panel
@@ -124,7 +124,7 @@ export default function DisplayPage() {
 
         socket.on("game-end", (data: { winner: any; scores: any[] }) => {
             setEndGameData(data);
-            // Fall back to lobby at 7s, right before the server fully purges players at 8s!
+            // Revert back to lobby view at 7 seconds so room allocations persist in the layout context
             setTimeout(() => {
                 setPhase("lobby");
                 setEndGameData(null);
@@ -316,13 +316,6 @@ export default function DisplayPage() {
         }
     };
 
-    // Early Match Termination
-    const handleForceEndGame = () => {
-        if (window.confirm("Force end the current match early?")) {
-            socketRef.current?.emit("force-end-game");
-        }
-    };
-
     /* ── Derived ─────────────────────────────────────────────────────── */
     const activeUserIds = new Set(players.map(p => p.userId));
     const leaderColor   = displayData.board[0]?.avatar_config?.color ?? "#FF2D78";
@@ -443,16 +436,6 @@ export default function DisplayPage() {
                             title="Mix Master"
                             allow="fullscreen"
                         />
-
-                        {/* Native Early Termination Button - Hidden during Game Over screen */}
-                        {!endGameData && (
-                            <button
-                                onClick={handleForceEndGame}
-                                className="fixed bottom-4 left-4 z-40 bg-[rgba(255,45,120,0.15)] hover:bg-[rgba(255,45,120,0.6)] border border-[rgba(255,45,120,0.4)] text-white/90 hover:text-white font-marker text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition-all duration-150 shadow-md active:scale-95"
-                            >
-                                ⏹ End Game Early
-                            </button>
-                        )}
 
                         {/* Game Over overlay built natively on the platform tier */}
                         {endGameData && (
