@@ -50,6 +50,9 @@ export default function DisplayPage() {
     const [countdown,       setCountdown]       = useState(weekCountdown());
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
+    // Track game over results to display natively on the platform tier over the embedded iframe
+    const [endGameData,     setEndGameData]     = useState<{ winner: any; scores: any[] } | null>(null);
+
     // Admin panel
     const [showAdmin,     setShowAdmin]     = useState(false);
     const [adminLoc,      setAdminLoc]      = useState<AdminLoc>(null);
@@ -109,16 +112,24 @@ export default function DisplayPage() {
         socket.emit("display-join");
         socket.on("lobby-update", (lobby: LobbyPlayer[]) => setPlayers(lobby));
 
-        // FIX: switch to game view as soon as the countdown starts.
-        // The previous code only listened for `game-start`, which the server
-        // emits AFTER the 3-2-1-GO countdown finishes (~3.8s). The platform
-        // showed the lobby that whole time, so the START GAME button felt
-        // unresponsive. Listening to `game-countdown` mounts the iframe
-        // immediately so users see the 3 → 2 → 1 → GO! sequence on click.
-        socket.on("game-countdown", () => setPhase("game"));
-        socket.on("game-start",     () => setPhase("game"));
-        socket.on("game-end",       () => {
-            setTimeout(() => { setPhase("lobby"); setPlayers([]); setSidebarExpanded(false); }, 8000);
+        socket.on("game-countdown", () => {
+            setEndGameData(null);
+            setPhase("game");
+        });
+
+        socket.on("game-start", () => {
+            setEndGameData(null);
+            setPhase("game");
+        });
+
+        socket.on("game-end", (data: { winner: any; scores: any[] }) => {
+            setEndGameData(data);
+            // Fall back to lobby at 7s, right before the server fully purges players at 8s!
+            setTimeout(() => {
+                setPhase("lobby");
+                setEndGameData(null);
+                setSidebarExpanded(false);
+            }, 7000);
         });
         return () => { socket.disconnect(); };
     }, []);
@@ -305,6 +316,13 @@ export default function DisplayPage() {
         }
     };
 
+    // Early Match Termination
+    const handleForceEndGame = () => {
+        if (window.confirm("Force end the current match early?")) {
+            socketRef.current?.emit("force-end-game");
+        }
+    };
+
     /* ── Derived ─────────────────────────────────────────────────────── */
     const activeUserIds = new Set(players.map(p => p.userId));
     const leaderColor   = displayData.board[0]?.avatar_config?.color ?? "#FF2D78";
@@ -418,12 +436,48 @@ export default function DisplayPage() {
             {/* Left: game iframe or lobby */}
             <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
                 {phase === "game" ? (
-                    <iframe
-                        src={`${GAME_SERVER}/display?embed=1`}
-                        className="absolute inset-0 w-full h-full border-0"
-                        title="Mix Master"
-                        allow="fullscreen"
-                    />
+                    <div className="absolute inset-0 w-full h-full">
+                        <iframe
+                            src={`${GAME_SERVER}/display?embed=1`}
+                            className="w-full h-full border-0"
+                            title="Mix Master"
+                            allow="fullscreen"
+                        />
+
+                        {/* Native Early Termination Button - Hidden during Game Over screen */}
+                        {!endGameData && (
+                            <button
+                                onClick={handleForceEndGame}
+                                className="fixed bottom-4 left-4 z-40 bg-[rgba(255,45,120,0.15)] hover:bg-[rgba(255,45,120,0.6)] border border-[rgba(255,45,120,0.4)] text-white/90 hover:text-white font-marker text-xs px-3 py-1.5 rounded-lg backdrop-blur-md transition-all duration-150 shadow-md active:scale-95"
+                            >
+                                ⏹ End Game Early
+                            </button>
+                        )}
+
+                        {/* Game Over overlay built natively on the platform tier */}
+                        {endGameData && (
+                            <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center gap-6 animate-fade-in">
+                                <h1 className="font-marker text-6xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
+                                    GAME OVER
+                                </h1>
+                                <div
+                                    className="font-boogaloo text-3xl mb-2"
+                                    style={{ color: endGameData.winner?.color ?? "#fff" }}
+                                >
+                                    {endGameData.winner ? `${endGameData.winner.name} wins!` : 'Draw!'}
+                                </div>
+
+                                <div className="flex flex-col gap-3 min-w-[320px]">
+                                    {endGameData.scores.map((p) => (
+                                        <div key={p.id} className="flex justify-between items-center px-5 py-3.5 rounded-xl bg-white/5 border border-white/10 font-boogaloo text-xl">
+                                            <span style={{ color: p.color }}>{p.name}</span>
+                                            <span className="font-marker" style={{ color: p.color }}>{p.pct}%</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 ) : (
                     <div
                         className="flex flex-col items-center gap-8 px-8 py-10 w-full"
