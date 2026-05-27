@@ -741,9 +741,9 @@ export default function JoinPage() {
         </span>
       </div>
 
-      {/* Joystick area */}
+      {/* D-pad area */}
       <div className="flex-1 flex items-center justify-center">
-        <Joystick color={myColor} onDirection={sendDir} />
+        <DPad color={myColor} onDirection={sendDir} />
       </div>
 
       {/* Death overlay */}
@@ -768,105 +768,49 @@ export default function JoinPage() {
   );
 }
 
-/* ── Joystick ───────────────────────────────────────────────────────────── */
+/* ── D-pad ──────────────────────────────────────────────────────────────── */
 
-const BASE_R     = 100;
-const THUMB_R    = 40;
-const DEAD_Z     = 18;
-const MAX_TRAVEL = BASE_R - THUMB_R;
+function DPad({ color, onDirection }: { color: string; onDirection: (dir: string) => void }) {
+  const btn = (dir: string, label: string) => (
+    <button
+      key={dir}
+      onTouchStart={(e) => { e.preventDefault(); onDirection(dir); }}
+      style={{
+        width:            100,
+        height:           100,
+        background:       color,
+        border:           "none",
+        borderRadius:     18,
+        fontSize:         38,
+        color:            "#fff",
+        boxShadow:        `0 0 28px ${color}88`,
+        touchAction:      "manipulation",
+        cursor:           "pointer",
+        userSelect:       "none",
+        WebkitUserSelect: "none",
+        display:          "flex",
+        alignItems:       "center",
+        justifyContent:   "center",
+      } as React.CSSProperties}
+    >
+      {label}
+    </button>
+  );
 
-function Joystick({ color, onDirection }: { color: string; onDirection: (dir: string) => void }) {
-    const baseRef             = useRef<HTMLDivElement>(null);
-    const dirRef              = useRef<string | null>(null);
-    const [pos, setPos]       = useState({ x: 0, y: 0 });
-    const [active, setActive] = useState(false);
-
-    useEffect(() => {
-        const base = baseRef.current;
-        if (!base) return;
-
-        const getCenter = () => {
-            const r = base.getBoundingClientRect();
-            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-        };
-
-        const move = (touch: Touch) => {
-            const c    = getCenter();
-            const dx   = touch.clientX - c.x;
-            const dy   = touch.clientY - c.y;
-            const dist = Math.hypot(dx, dy);
-
-            // Visual thumb position (clamped to base radius)
-            const clamped = Math.min(dist, MAX_TRAVEL);
-            const angle   = Math.atan2(dy, dx);
-            setPos({ x: Math.cos(angle) * clamped, y: Math.sin(angle) * clamped });
-
-            // Dead zone — no direction change while near center
-            if (dist < DEAD_Z) { dirRef.current = null; return; }
-
-            // FIX: simple axis comparison instead of atan2 degree mapping.
-            // Screen Y increases downward, so dy > 0 = finger moved down = 'down'. ✓
-            const newDir = Math.abs(dx) > Math.abs(dy)
-                ? (dx > 0 ? "right" : "left")
-                : (dy > 0 ? "down"  : "up");
-
-            if (newDir !== dirRef.current) {
-                dirRef.current = newDir;
-                onDirection(newDir);
-            }
-        };
-
-        const onStart  = (e: TouchEvent) => { e.preventDefault(); setActive(true);  move(e.touches[0]); };
-        const onMove   = (e: TouchEvent) => { e.preventDefault(); move(e.touches[0]); };
-        const onEnd    = (e: TouchEvent) => { e.preventDefault(); setActive(false); setPos({ x: 0, y: 0 }); dirRef.current = null; };
-
-        base.addEventListener("touchstart",  onStart, { passive: false });
-        base.addEventListener("touchmove",   onMove,  { passive: false });
-        base.addEventListener("touchend",    onEnd,   { passive: false });
-        base.addEventListener("touchcancel", onEnd,   { passive: false });
-
-        return () => {
-            base.removeEventListener("touchstart",  onStart);
-            base.removeEventListener("touchmove",   onMove);
-            base.removeEventListener("touchend",    onEnd);
-            base.removeEventListener("touchcancel", onEnd);
-        };
-    }, [onDirection]);
-
-    // JSX return is unchanged — only the move() logic above changed
-    return (
-        <div
-            ref={baseRef}
-            style={{
-                width:        BASE_R * 2,
-                height:       BASE_R * 2,
-                borderRadius: "50%",
-                background:   "rgba(0,0,0,0.45)",
-                border:       `3px solid ${active ? color : "rgba(255,255,255,0.12)"}`,
-                boxShadow:    active ? `0 0 30px ${color}55` : "none",
-                position:     "relative",
-                touchAction:  "none",
-                flexShrink:   0,
-            }}
-        >
-            <div
-                style={{
-                    position:     "absolute",
-                    width:        THUMB_R * 2,
-                    height:       THUMB_R * 2,
-                    borderRadius: "50%",
-                    background:   color,
-                    opacity:      active ? 0.9 : 0.35,
-                    top:          "50%",
-                    left:         "50%",
-                    transform:    `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
-                    transition:   active ? "none" : "transform 0.15s ease, opacity 0.15s",
-                    boxShadow:    active ? `0 0 20px ${color}88` : "none",
-                    pointerEvents: "none",
-                }}
-            />
-        </div>
-    );
+  return (
+    <div
+      style={{
+        display:             "grid",
+        gridTemplateColumns: "repeat(3, 100px)",
+        gridTemplateRows:    "repeat(3, 100px)",
+        gap:                 12,
+      }}
+    >
+      <span />{btn("up",    "▲")}<span />
+      {btn("left", "◄")}<span />{btn("right", "►")}
+      <span />{btn("down",  "▼")}<span />
+    </div>
+  );
 }
 
 /* ── Shared UI helpers ──────────────────────────────────────────────────── */

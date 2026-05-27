@@ -3,6 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { getActiveLocation } from "@/lib/db";
 import { supabaseAdmin } from "@/lib/supabase";
 
+// To add a second admin:
+//   Vercel → Settings → Environment Variables → ADMIN_USER_IDS=user_abc123,user_xyz789
+// Any user can find their own Clerk ID at: GET /api/debug-user
 async function checkAdmin(userId: string | null): Promise<boolean> {
   if (!userId) return false;
 
