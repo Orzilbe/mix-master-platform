@@ -226,6 +226,11 @@ export default function JoinPage() {
       setPhase("waiting");
     });
 
+    // Explicit color update — emitted after shade deduplication resolves
+    socket.on("color-assigned", ({ color }: { color: string }) => {
+      setMyColor(color);
+    });
+
     socket.on("game-start", () => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
       setPhase("playing");
