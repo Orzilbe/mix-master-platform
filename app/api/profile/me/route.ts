@@ -30,5 +30,6 @@ export async function GET() {
     }
   }
 
+  console.log('[/api/profile/me] player:', JSON.stringify(player));
   return NextResponse.json({ player, weeklyRank, weeklyScore, gamesPlayed, bestScore });
 }

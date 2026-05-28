@@ -72,6 +72,7 @@ export default function ProfilePage() {
 
   const save = async (overrideConfig?: AvatarConfig) => {
     const cfg = overrideConfig ?? draftConfig;
+    console.log('[profile] save() called — sending:', { username: username.trim(), avatar_config: cfg });
     setSaving(true);
     setSaveStatus("idle");
     try {
@@ -80,6 +81,8 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ username: username.trim(), avatar_config: cfg }),
       });
+      const body = await res.json().catch(() => ({}));
+      console.log('[profile] save() response:', res.status, body);
       if (!res.ok) throw new Error("Save failed");
       setSavedConfig(cfg);
       setSaveStatus("saved");
