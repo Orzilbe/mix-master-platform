@@ -181,6 +181,7 @@ export default function JoinPage() {
 
     const emitJoin = () => {
       const cfg = avatarConfigRef.current;
+      console.log('[join] sending color:', cfg.color);
       console.log("[join] emitting lobby-join", { userId: user.id, color: cfg.color, shape: cfg.shape });
       socket.emit("lobby-join", {
         userId:       user.id,

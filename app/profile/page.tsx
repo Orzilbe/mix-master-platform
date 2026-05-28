@@ -100,6 +100,7 @@ export default function ProfilePage() {
   };
 
   const updateConfig = (next: AvatarConfig) => {
+    console.log('[profile] avatar changed — color:', next.color, '| hasUnsaved will be:', JSON.stringify(next) !== JSON.stringify(savedConfig));
     setDraftConfig(next);
   };
 
@@ -142,7 +143,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-mm-bg pb-16 px-4">
+    <div className={`min-h-screen bg-mm-bg ${hasUnsaved ? "pb-40" : "pb-16"} px-4`}>
       <style>{`
         @keyframes save-glow {
           0%, 100% { box-shadow: 0 0 18px #22c55e88; }
@@ -306,14 +307,20 @@ export default function ProfilePage() {
         </div>
       </Section>
 
-      {/* Save button — only visible when there are unsaved changes */}
+      {/* Save bar — fixed at bottom so it's always visible when there are unsaved changes */}
       {hasUnsaved && (
-        <div className="flex flex-col items-center gap-3 mb-7">
+        <div
+          className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-2 px-4 pb-6 pt-3"
+          style={{
+            background: "linear-gradient(to bottom, transparent, rgba(13,13,13,0.97) 35%)",
+            zIndex: 50,
+          }}
+        >
           <p className="font-boogaloo text-yellow-400 text-sm animate-pulse">⚠️ Unsaved changes</p>
           <button
             onClick={() => save()}
             disabled={saving}
-            className="save-pulse font-marker text-2xl px-14 py-4 rounded-2xl text-white
+            className="save-pulse w-full max-w-sm font-marker text-2xl py-4 rounded-2xl text-white
                        transition-all active:scale-95 disabled:opacity-60"
             style={{
               background: "#16a34a",
