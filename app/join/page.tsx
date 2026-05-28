@@ -88,9 +88,19 @@ export default function JoinPage() {
 
     fetch("/api/profile/me")
       .then(r => r.json())
-      .then(({ player, weeklyRank: wr, weeklyScore: ws }) => {
+      .then(async ({ player, weeklyRank: wr, weeklyScore: ws }) => {
         if (!player?.avatar_config) {
-          router.replace("/setup-profile");
+          // No avatar saved yet — write DEFAULT_AVATAR so every player always has a color
+          const name = (player?.username || user?.username || user?.firstName || "Player") as string;
+          await fetch("/api/profile/save", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ username: name, avatar_config: DEFAULT_AVATAR }),
+          }).catch(() => {});
+          setAvatarConfig(DEFAULT_AVATAR);
+          setWeeklyRank(wr ?? null);
+          setWeeklyScore(ws ?? 0);
+          setProfileReady(true);
           return;
         }
         setAvatarConfig(player.avatar_config as AvatarConfig);
@@ -175,6 +185,13 @@ export default function JoinPage() {
   // ── Phase 2: Socket.io ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded || !user || serverState !== "ready") return;
+
+    // Safety net — if no color is set, send to profile before joining
+    if (!avatarConfigRef.current.color) {
+      console.warn('[join] avatar color missing — redirecting to /profile');
+      router.replace("/profile");
+      return;
+    }
 
     const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
     socketRef.current = socket;

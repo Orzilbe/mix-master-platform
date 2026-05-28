@@ -143,7 +143,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className={`min-h-screen bg-mm-bg ${hasUnsaved ? "pb-40" : "pb-16"} px-4`}>
+    <div className={`min-h-screen bg-mm-bg ${hasUnsaved ? "pb-40" : "pb-16"} px-4`} style={{ overflowY: "auto" }}>
       <style>{`
         @keyframes save-glow {
           0%, 100% { box-shadow: 0 0 18px #22c55e88; }
