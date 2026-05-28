@@ -17,21 +17,24 @@ export default function ProfilePage() {
   const { signOut } = useClerk();
   const router = useRouter();
 
-  const [loading,     setLoading]     = useState(true);
-  const [username,    setUsername]    = useState("");
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput,   setNameInput]   = useState("");
-  const [config,      setConfig]      = useState<AvatarConfig>(DEFAULT_AVATAR);
-  const [saving,      setSaving]      = useState(false);
-  const [saveStatus,  setSaveStatus]  = useState<"idle" | "saved" | "error">("idle");
+  const [loading,      setLoading]      = useState(true);
+  const [username,     setUsername]     = useState("");
+  const [editingName,  setEditingName]  = useState(false);
+  const [nameInput,    setNameInput]    = useState("");
+  const [savedConfig,  setSavedConfig]  = useState<AvatarConfig>(DEFAULT_AVATAR);
+  const [draftConfig,  setDraftConfig]  = useState<AvatarConfig>(DEFAULT_AVATAR);
+  const [saving,       setSaving]       = useState(false);
+  const [saveStatus,   setSaveStatus]   = useState<"idle" | "saved" | "error">("idle");
 
   // Stats
-  const [gamesPlayed,   setGamesPlayed]   = useState(0);
-  const [bestScore,     setBestScore]     = useState(0);
-  const [weeklyRank,    setWeeklyRank]    = useState<number | null>(null);
-  const [weeklyScore,   setWeeklyScore]   = useState(0);
-  const [notifStatus,   setNotifStatus]   = useState<"idle" | "loading" | "enabled" | "denied" | "error">("idle");
+  const [gamesPlayed,    setGamesPlayed]    = useState(0);
+  const [bestScore,      setBestScore]      = useState(0);
+  const [weeklyRank,     setWeeklyRank]     = useState<number | null>(null);
+  const [weeklyScore,    setWeeklyScore]    = useState(0);
+  const [notifStatus,    setNotifStatus]    = useState<"idle" | "loading" | "enabled" | "denied" | "error">("idle");
   const [notifSupported, setNotifSupported] = useState(true);
+
+  const hasUnsaved = JSON.stringify(draftConfig) !== JSON.stringify(savedConfig);
 
   useEffect(() => {
     if (typeof Notification === "undefined") {
@@ -50,7 +53,10 @@ export default function ProfilePage() {
       .then(r => r.json())
       .then(({ player, weeklyRank: wr, weeklyScore: ws, gamesPlayed: gp, bestScore: bs }) => {
         if (player?.username) { setUsername(player.username); setNameInput(player.username); }
-        if (player?.avatar_config) setConfig(player.avatar_config as AvatarConfig);
+        if (player?.avatar_config) {
+          setSavedConfig(player.avatar_config as AvatarConfig);
+          setDraftConfig(player.avatar_config as AvatarConfig);
+        }
         setWeeklyRank(wr ?? null);
         setWeeklyScore(ws ?? 0);
         setGamesPlayed(gp ?? 0);
@@ -65,7 +71,7 @@ export default function ProfilePage() {
   }, [isLoaded, user, router]);
 
   const save = async (overrideConfig?: AvatarConfig) => {
-    const cfg = overrideConfig ?? config;
+    const cfg = overrideConfig ?? draftConfig;
     setSaving(true);
     setSaveStatus("idle");
     try {
@@ -75,8 +81,9 @@ export default function ProfilePage() {
         body:    JSON.stringify({ username: username.trim(), avatar_config: cfg }),
       });
       if (!res.ok) throw new Error("Save failed");
+      setSavedConfig(cfg);
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2500);
+      setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 2500);
@@ -93,8 +100,7 @@ export default function ProfilePage() {
   };
 
   const updateConfig = (next: AvatarConfig) => {
-    setConfig(next);
-    save(next);
+    setDraftConfig(next);
   };
 
   const enableNotifications = async () => {
@@ -103,7 +109,7 @@ export default function ProfilePage() {
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { setNotifStatus("denied"); return; }
 
-      const reg  = await navigator.serviceWorker.ready;
+      const reg   = await navigator.serviceWorker.ready;
       const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
       let subData: object = { permissionGranted: true };
@@ -137,6 +143,13 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-mm-bg pb-16 px-4">
+      <style>{`
+        @keyframes save-glow {
+          0%, 100% { box-shadow: 0 0 18px #22c55e88; }
+          50%       { box-shadow: 0 0 52px #22c55ecc, 0 0 90px #22c55e33; }
+        }
+        .save-pulse { animation: save-glow 1.4s ease-in-out infinite; }
+      `}</style>
 
       {/* Header */}
       <div className="pt-6 pb-4 flex items-center gap-3">
@@ -156,12 +169,12 @@ export default function ProfilePage() {
         <div
           className="w-36 h-36 rounded-full flex items-center justify-center relative"
           style={{
-            background: `${config.color}18`,
-            border:     `3px solid ${config.color}`,
-            boxShadow:  `0 0 40px ${config.color}55`,
+            background: `${draftConfig.color}18`,
+            border:     `3px solid ${draftConfig.color}`,
+            boxShadow:  `0 0 40px ${draftConfig.color}55`,
           }}
         >
-          <PlayerAvatar config={config} size={104} />
+          <PlayerAvatar config={draftConfig} size={104} />
           {saving && (
             <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
               <div className="w-5 h-5 border-2 border-mm-cyan border-t-transparent rounded-full animate-spin" />
@@ -170,10 +183,10 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Save status */}
+      {/* Save confirmation */}
       {saveStatus !== "idle" && (
         <p className={`text-center font-boogaloo text-sm mb-4 ${saveStatus === "saved" ? "text-green-400" : "text-red-400"}`}>
-          {saveStatus === "saved" ? "Avatar saved! 🎨" : "Save failed — try again"}
+          {saveStatus === "saved" ? "✅ Saved!" : "Save failed — try again"}
         </p>
       )}
 
@@ -196,7 +209,7 @@ export default function ProfilePage() {
             <button
               onClick={saveName}
               className="font-marker text-sm px-4 py-3 rounded-xl text-white"
-              style={{ background: config.color }}
+              style={{ background: draftConfig.color }}
             >
               OK
             </button>
@@ -218,22 +231,22 @@ export default function ProfilePage() {
       <Section label="CHARACTER">
         <div className="grid grid-cols-4 gap-3">
           {AVATAR_SHAPES.map(({ id, label }) => {
-            const active = config.shape === id;
+            const active = draftConfig.shape === id;
             return (
               <button
                 key={id}
-                onClick={() => updateConfig({ ...config, shape: id })}
+                onClick={() => updateConfig({ ...draftConfig, shape: id })}
                 className="flex flex-col items-center gap-1 pt-3 pb-2 rounded-2xl transition-all"
                 style={{
-                  background: active ? `${config.color}20` : "rgba(255,255,255,.04)",
-                  border:     `2px solid ${active ? config.color : "rgba(255,255,255,.1)"}`,
-                  boxShadow:  active ? `0 0 18px ${config.color}44` : "none",
+                  background: active ? `${draftConfig.color}20` : "rgba(255,255,255,.04)",
+                  border:     `2px solid ${active ? draftConfig.color : "rgba(255,255,255,.1)"}`,
+                  boxShadow:  active ? `0 0 18px ${draftConfig.color}44` : "none",
                 }}
               >
-                <PlayerAvatar config={{ ...config, shape: id }} size={56} />
+                <PlayerAvatar config={{ ...draftConfig, shape: id }} size={56} />
                 <span
                   className="font-boogaloo text-xs"
-                  style={{ color: active ? config.color : "rgba(255,255,255,.45)" }}
+                  style={{ color: active ? draftConfig.color : "rgba(255,255,255,.45)" }}
                 >
                   {label}
                 </span>
@@ -247,11 +260,11 @@ export default function ProfilePage() {
       <Section label="COLOR">
         <div className="flex gap-3 justify-center">
           {AVATAR_COLORS.map(c => {
-            const active = config.color === c;
+            const active = draftConfig.color === c;
             return (
               <button
                 key={c}
-                onClick={() => updateConfig({ ...config, color: c })}
+                onClick={() => updateConfig({ ...draftConfig, color: c })}
                 className="w-14 h-14 rounded-full transition-all"
                 style={{
                   background: c,
@@ -269,21 +282,21 @@ export default function ProfilePage() {
       <Section label="ACCESSORY">
         <div className="grid grid-cols-5 gap-2">
           {AVATAR_ACCESSORIES.map(({ id, label }) => {
-            const active = config.accessory === id;
+            const active = draftConfig.accessory === id;
             return (
               <button
                 key={id}
-                onClick={() => updateConfig({ ...config, accessory: id })}
+                onClick={() => updateConfig({ ...draftConfig, accessory: id })}
                 className="flex flex-col items-center gap-1 pt-2 pb-1 rounded-2xl transition-all"
                 style={{
-                  background: active ? `${config.color}20` : "rgba(255,255,255,.04)",
-                  border:     `2px solid ${active ? config.color : "rgba(255,255,255,.1)"}`,
+                  background: active ? `${draftConfig.color}20` : "rgba(255,255,255,.04)",
+                  border:     `2px solid ${active ? draftConfig.color : "rgba(255,255,255,.1)"}`,
                 }}
               >
-                <PlayerAvatar config={{ ...config, accessory: id }} size={44} />
+                <PlayerAvatar config={{ ...draftConfig, accessory: id }} size={44} />
                 <span
                   className="font-boogaloo text-xs"
-                  style={{ color: active ? config.color : "rgba(255,255,255,.35)" }}
+                  style={{ color: active ? draftConfig.color : "rgba(255,255,255,.35)" }}
                 >
                   {label}
                 </span>
@@ -293,12 +306,31 @@ export default function ProfilePage() {
         </div>
       </Section>
 
+      {/* Save button — only visible when there are unsaved changes */}
+      {hasUnsaved && (
+        <div className="flex flex-col items-center gap-3 mb-7">
+          <p className="font-boogaloo text-yellow-400 text-sm animate-pulse">⚠️ Unsaved changes</p>
+          <button
+            onClick={() => save()}
+            disabled={saving}
+            className="save-pulse font-marker text-2xl px-14 py-4 rounded-2xl text-white
+                       transition-all active:scale-95 disabled:opacity-60"
+            style={{
+              background: "#16a34a",
+              border:     "2px solid #22c55e",
+            }}
+          >
+            {saving ? "Saving…" : "💾 SAVE"}
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <Section label="STATS">
         <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Games"     value={gamesPlayed}                             color={config.color} />
-          <StatCard label="Best"      value={`${(bestScore / 10).toFixed(1)}%`}       color={config.color} />
-          <StatCard label="This week" value={weeklyRank != null ? `#${weeklyRank}` : "—"} color={config.color} />
+          <StatCard label="Games"     value={gamesPlayed}                                  color={draftConfig.color} />
+          <StatCard label="Best"      value={`${(bestScore / 10).toFixed(1)}%`}            color={draftConfig.color} />
+          <StatCard label="This week" value={weeklyRank != null ? `#${weeklyRank}` : "—"}  color={draftConfig.color} />
         </div>
         {weeklyScore > 0 && (
           <p className="font-boogaloo text-white/30 text-xs text-center mt-2">
@@ -313,7 +345,7 @@ export default function ProfilePage() {
           {notifStatus === "enabled" ? (
             <div
               className="flex items-center gap-3 px-4 py-3 rounded-xl"
-              style={{ background: `${config.color}15`, border: `1px solid ${config.color}33` }}
+              style={{ background: `${draftConfig.color}15`, border: `1px solid ${draftConfig.color}33` }}
             >
               <span className="text-green-400 text-lg">✅</span>
               <span className="font-boogaloo text-white/70 text-sm">Notifications enabled!</span>
