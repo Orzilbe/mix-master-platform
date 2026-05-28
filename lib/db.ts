@@ -30,7 +30,7 @@ export async function getOrCreatePlayer(
 }
 
 export async function getPlayer(clerkId: string): Promise<Player | null> {
-  const { data } = await supabase
+  const { data } = await supabaseAdmin()
     .from("players")
     .select("*")
     .eq("clerk_id", clerkId)
