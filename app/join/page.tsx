@@ -50,7 +50,8 @@ export default function JoinPage() {
 
   // ── Game state ───────────────────────────────────────────────────────────
   const [phase,        setPhase]   = useState<Phase>("joining");
-  const [myColor,      setMyColor] = useState("#FF2D78");
+  const [myColor,      setMyColor]    = useState("#FF2D78");
+  const [gameColor,    setGameColor]  = useState("#FF2D78");
   const [respawnCount, setRespawn] = useState(0);
   const [rank,         setRank]    = useState<number | null>(null);
   const [pct,          setPct]     = useState("0");
@@ -244,9 +245,9 @@ export default function JoinPage() {
       setPhase("waiting");
     });
 
-    // Explicit color update — emitted after shade deduplication resolves
+    // Slot color from server — only drives the D-pad; avatar keeps avatarConfig.color
     socket.on("color-assigned", ({ color }: { color: string }) => {
-      setMyColor(color);
+      setGameColor(color);
     });
 
     socket.on("game-start", () => {
@@ -490,12 +491,12 @@ export default function JoinPage() {
             style={{
               width:      "9rem",
               height:     "9rem",
-              background: `${myColor}18`,
-              border:     `3px solid ${myColor}`,
-              boxShadow:  `0 0 48px ${myColor}66`,
+              background: `${avatarConfig.color}18`,
+              border:     `3px solid ${avatarConfig.color}`,
+              boxShadow:  `0 0 48px ${avatarConfig.color}66`,
             }}
           >
-            <PlayerAvatar config={{ ...avatarConfig, color: myColor }} size={104} />
+            <PlayerAvatar config={avatarConfig} size={104} />
           </div>
           </Link>
 
@@ -767,7 +768,7 @@ export default function JoinPage() {
 
       {/* D-pad area */}
       <div className="flex-1 flex items-center justify-center">
-        <DPad color={myColor} onDirection={sendDir} />
+        <DPad color={gameColor} onDirection={sendDir} />
       </div>
 
       {/* Death overlay */}
