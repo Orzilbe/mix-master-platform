@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
+import { GraffitiAnimation } from "@/components/GraffitiAnimation";
 import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
@@ -274,9 +275,11 @@ export default function DisplayPage() {
                         )}
                     </div>
                 ) : (
+                    <>
+                    <GraffitiAnimation visible={players.length === 0} />
                     <div
-                        className="flex flex-col items-center gap-8 px-8 py-10 w-full"
-                        style={{ overflow: "visible", textAlign: "center" }}
+                        className="relative flex flex-col items-center gap-8 px-8 py-10 w-full"
+                        style={{ overflow: "visible", textAlign: "center", zIndex: 1 }}
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -350,6 +353,7 @@ export default function DisplayPage() {
                             </button>
                         )}
                     </div>
+                    </>
                 )}
             </div>
 
