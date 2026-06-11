@@ -13,7 +13,6 @@ const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 
 type ServerState = "checking" | "starting" | "failed" | "ready";
 type Phase       = "joining" | "waiting" | "playing" | "dead" | "full" | "in-progress" | "game-over";
-type LocState    = "idle" | "checking" | "allowed" | "dev" | "denied" | "blocked";
 
 type MiniRow   = { rank: number; clerk_id: string; username: string; total_score: number };
 type LiveScore = { id: number; rank: number; name: string; color: string; pct: string };
@@ -67,10 +66,6 @@ export default function JoinPage() {
   const [queuePosition,  setQueuePosition]  = useState<number | null>(null);
   const [queueTotal,     setQueueTotal]     = useState(0);
 
-  // Location check
-  const [locState, setLocState] = useState<LocState>("idle");
-  const [locInfo,  setLocInfo]  = useState<{ name: string; distance: number; radius: number } | null>(null);
-
   // ── Refs ─────────────────────────────────────────────────────────────────
   const socketRef    = useRef<Socket | null>(null);
   const mySlotRef    = useRef<number | null>(null);
@@ -112,45 +107,9 @@ export default function JoinPage() {
       .catch(() => setProfileReady(true));
   }, [isLoaded, user, router]);
 
-  // Location check — runs once profile is ready
-  useEffect(() => {
-    if (!isLoaded || !user || !profileReady) return;
-    if (locState !== "idle") return;
-
-    setLocState("checking");
-
-    if (!navigator.geolocation) {
-      setLocState("allowed");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        try {
-          const res  = await fetch(`/api/location/check?lat=${lat}&lng=${lng}`);
-          const data = await res.json();
-          if (data.devMode) {
-            setLocState("dev");
-          } else if (data.allowed) {
-            setLocState("allowed");
-          } else {
-            setLocInfo({ name: data.locationName, distance: data.distance, radius: data.radius });
-            setLocState("blocked");
-          }
-        } catch {
-          setLocState("allowed"); // if check fails, allow through
-        }
-      },
-      () => setLocState("denied"),
-      { timeout: 15_000, maximumAge: 60_000 },
-    );
-  }, [isLoaded, user, profileReady, locState]);
-
   // Phase 1: health check
   useEffect(() => {
     if (!isLoaded || !user || !profileReady) return;
-    if (locState !== "allowed" && locState !== "dev") return;
     setServerState("checking");
     setHealthError(null);
 
@@ -181,7 +140,7 @@ export default function JoinPage() {
       abortControllers.forEach(c => c.abort());
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isLoaded, user, profileReady, locState, retryKey]);
+  }, [isLoaded, user, profileReady, retryKey]);
 
   // ── Phase 2: Socket.io ───────────────────────────────────────────────────
   useEffect(() => {
@@ -330,83 +289,8 @@ export default function JoinPage() {
 
   const retry = () => { setHealthError(null); setRetryKey(k => k + 1); };
 
-  const retryLocation = () => setLocState("idle");
-
   /* ── Render ────────────────────────────────────────────────────────────── */
   if (!isLoaded || !user || !profileReady) return <Centered><Spinner /></Centered>;
-
-  // Location gate
-  if (locState === "idle" || locState === "checking") {
-    return (
-      <Centered>
-        <span className="text-4xl">📍</span>
-        <p className="font-marker text-mm-cyan text-xl">Checking your location…</p>
-        <Spinner />
-      </Centered>
-    );
-  }
-
-  if (locState === "denied") {
-    return (
-      <Centered>
-        <span className="text-5xl">📍</span>
-        <p className="font-marker text-mm-pink text-2xl">Location required</p>
-        <Muted>Enable location access to play.</Muted>
-        <a
-          href="https://support.google.com/chrome/answer/142065"
-          target="_blank"
-          rel="noreferrer"
-          className="font-boogaloo text-mm-cyan text-sm underline underline-offset-2"
-        >
-          How to enable location ↗
-        </a>
-        <button
-          onClick={retryLocation}
-          className="mt-2 font-boogaloo text-lg px-8 py-3 rounded-xl text-white"
-          style={{ background: "#FF2D78", boxShadow: "0 0 20px rgba(255,45,120,.5)" }}
-        >
-          Retry
-        </button>
-      </Centered>
-    );
-  }
-
-  if (locState === "blocked" && locInfo) {
-    return (
-      <Centered>
-        <span className="text-5xl">📍</span>
-        <p
-          className="font-marker text-2xl"
-          style={{ color: "#FF2D78", textShadow: "0 0 20px #FF2D7888" }}
-        >
-          YOU NEED TO BE AT
-        </p>
-        <p
-          className="font-marker text-xl"
-          style={{ color: "#00E5FF", textShadow: "0 0 16px #00E5FF88" }}
-        >
-          {locInfo.name}
-        </p>
-        <p className="font-boogaloo text-white/60 text-lg">Come join us in person to play!</p>
-        <div
-          className="px-5 py-3 rounded-2xl text-center"
-          style={{ background: "rgba(255,45,120,.1)", border: "1px solid rgba(255,45,120,.3)" }}
-        >
-          <p className="font-boogaloo text-white/40 text-xs uppercase tracking-widest mb-1">Distance from venue</p>
-          <p className="font-marker text-mm-pink text-2xl">{locInfo.distance}m</p>
-          <p className="font-boogaloo text-white/25 text-xs">within {locInfo.radius}m to enter</p>
-        </div>
-
-        <button
-          onClick={retryLocation}
-          className="font-boogaloo text-lg px-8 py-3 rounded-xl text-white"
-          style={{ background: "#FF2D78", boxShadow: "0 0 20px rgba(255,45,120,.5)" }}
-        >
-          Try Again
-        </button>
-      </Centered>
-    );
-  }
 
   const name = user.username ?? user.firstName ?? "Player";
 
@@ -456,16 +340,6 @@ export default function JoinPage() {
     return (
       <div className="min-h-screen bg-mm-bg flex flex-col items-center px-5 pt-8 pb-6">
         <InstallBanner />
-
-        {/* Dev mode banner */}
-        {locState === "dev" && (
-          <div className="w-full mb-4 px-4 py-2 rounded-xl text-center"
-               style={{ background: "rgba(255,214,0,.12)", border: "1px solid rgba(255,214,0,.3)" }}>
-            <p className="font-boogaloo text-yellow-400 text-sm">
-              Dev mode — no active location set
-            </p>
-          </div>
-        )}
 
         {/* Top bar: settings + sign out */}
         <div className="w-full flex justify-between items-center mb-1">

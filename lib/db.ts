@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin } from "./supabase";
-import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, Location, AvatarConfig } from "./types";
+import type { Player, GameSession, WeeklyLeaderboardRow, WeeklyChampion, AvatarConfig } from "./types";
 
 // ── Players ───────────────────────────────────────────────────────────────────
 
@@ -175,65 +175,6 @@ export async function getAllTimeLeaderboard(limit = 20): Promise<
     }))
     .sort((a, b) => b.total_score - a.total_score)
     .slice(0, limit);
-}
-
-// ── Locations ─────────────────────────────────────────────────────────────────
-
-export async function getActiveLocation(): Promise<Location | null> {
-  const admin = supabaseAdmin();
-  const { data, error } = await admin
-    .from("locations")
-    .select("*")
-    .eq("is_active", true)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .single();
-  return (data as Location) ?? null;
-}
-
-export async function upsertLocation(
-  lat: number,
-  lon: number,
-  radius_m: number,
-  name = "Main Venue",
-): Promise<Location> {
-  const admin = supabaseAdmin();
-
-  // Find the canonical (most recently updated) row
-  const { data: existing } = await admin
-    .from("locations")
-    .select("id")
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  let result: Location;
-
-  if (existing) {
-    // Update in place — keeps the table at exactly one row
-    const { data, error } = await admin
-      .from("locations")
-      .update({ lat, lon, radius_m, name, is_active: true, updated_at: new Date().toISOString() })
-      .eq("id", existing.id)
-      .select()
-      .single();
-    if (error) throw error;
-    result = data as Location;
-
-    // Remove any extra rows that accumulated from previous insert-based saves
-    await admin.from("locations").delete().neq("id", existing.id);
-  } else {
-    const { data, error } = await admin
-      .from("locations")
-      .insert({ lat, lon, radius_m, name, is_active: true })
-      .select()
-      .single();
-    if (error) throw error;
-    result = data as Location;
-  }
-
-  console.log("[upsertLocation] saved:", JSON.stringify(result));
-  return result;
 }
 
 // ── ISO week helpers (no external dependency) ─────────────────────────────────

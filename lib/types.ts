@@ -54,12 +54,3 @@ export interface WeeklyChampion {
   players?: Pick<Player, "username" | "avatar_url" | "clerk_id" | "avatar_config">;
 }
 
-export interface Location {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  radius_m: number;
-  is_active: boolean;
-  updated_at: string;
-}
