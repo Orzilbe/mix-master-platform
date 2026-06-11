@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getWeeklyLeaderboard, getLatestChampion } from "@/lib/db";
 import type { AvatarConfig } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const [rows, champion] = await Promise.all([
     getWeeklyLeaderboard(0),
