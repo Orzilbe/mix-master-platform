@@ -26,7 +26,7 @@ export default function EditAvatarPage() {
     if (!isLoaded) return;
     if (!user) { router.replace("/login"); return; }
 
-    fetch("/api/profile/me")
+    fetch(`/api/profile/me?ts=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then(({ player }) => {
         if (player?.username) setUsername(player.username);
@@ -50,7 +50,8 @@ export default function EditAvatarPage() {
         body:    JSON.stringify({ username: username.trim(), avatar_config: config }),
       });
       if (!res.ok) throw new Error("Save failed");
-      router.replace("/join");
+      router.refresh();
+      router.replace(`/join?avatarUpdated=${Date.now()}`);
     } catch {
       setError("Failed to save. Try again.");
       setSaving(false);

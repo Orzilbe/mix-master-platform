@@ -16,6 +16,7 @@ type Phase       = "joining" | "waiting" | "playing" | "dead" | "full" | "in-pro
 
 type MiniRow   = { rank: number; clerk_id: string; username: string; total_score: number };
 type LiveScore = { id: number; rank: number; name: string; color: string; pct: string };
+type FinalResults = { winner: { id?: number; name: string; color?: string } | null; scores: LiveScore[] };
 
 type HealthResult = { ok: true } | { ok: false; error: string };
 
@@ -55,6 +56,7 @@ export default function JoinPage() {
   const [rank,         setRank]    = useState<number | null>(null);
   const [pct,          setPct]     = useState("0");
   const [winnerName,   setWinner]  = useState<string | null>(null);
+  const [gameResults,  setGameResults] = useState<FinalResults | null>(null);
 
   // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
@@ -82,7 +84,7 @@ export default function JoinPage() {
   useEffect(() => {
     if (!isLoaded || !user) return;
 
-    fetch("/api/profile/me")
+    fetch(`/api/profile/me?ts=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then(async ({ player, weeklyRank: wr, weeklyScore: ws }) => {
         if (!player?.avatar_config) {
@@ -177,6 +179,8 @@ export default function JoinPage() {
       setMyColor(color);
       setLiveScores([]);
       setGameEnding(false);
+      setWinner(null);
+      setGameResults(null);
       setQueuePosition(null);
       setPhase("waiting");
     });
@@ -200,6 +204,8 @@ export default function JoinPage() {
       setMyColor(color);
       setLiveScores([]);
       setGameEnding(false);
+      setWinner(null);
+      setGameResults(null);
       setQueuePosition(null);
       setPhase("waiting");
     });
@@ -211,6 +217,8 @@ export default function JoinPage() {
 
     socket.on("game-start", () => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
+      setWinner(null);
+      setGameResults(null);
       setPhase("playing");
     });
 
@@ -232,20 +240,20 @@ export default function JoinPage() {
       }, 1000);
     });
 
-    socket.on("game-end", ({ winner }: { winner: { name: string } | null }) => {
+    socket.on("game-end", ({ winner, scores }: FinalResults) => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
 
+      const results: FinalResults = { winner, scores: scores ?? [] };
       const wasSpectating =
         phaseRef.current === "full" || phaseRef.current === "in-progress";
 
+      setWinner(winner?.name ?? null);
+      setGameResults(results);
+
       if (wasSpectating) {
-        // Server will either send 'promoted-to-player' (got a slot) or
-        // 'queue-position' (still waiting). Just show the ending animation.
         setGameEnding(true);
-        // Safety reset if server doesn't respond within 15s
         setTimeout(() => setGameEnding(false), 15_000);
       } else {
-        setWinner(winner?.name ?? null);
         setPhase("game-over");
       }
     });
@@ -492,17 +500,17 @@ export default function JoinPage() {
 
         {/* Status header */}
         <div className="flex flex-col items-center gap-3 mb-6 text-center">
-          {gameEnding ? (
-            <>
-              <p
-                className="font-marker text-3xl"
-                style={{ color: "#00E5FF", textShadow: "0 0 20px #00E5FF" }}
-              >
-                GAME OVER!
-              </p>
-              <Muted>Getting you a spot…</Muted>
-              <Spinner />
-            </>
+          {gameEnding && gameResults ? (
+            <ResultsCard
+              winner={gameResults.winner}
+              scores={gameResults.scores}
+              mySlot={mySlotRef.current}
+              title="ROUND OVER"
+              subtitle="Getting you ready for the next round…"
+              footer={queuePosition != null
+                ? `Still in queue — you’re #${queuePosition}${queueTotal > 1 ? ` of ${queueTotal}` : ""}.`
+                : "The room is updating for the next round."}
+            />
           ) : (
             <>
               <p
@@ -598,16 +606,17 @@ export default function JoinPage() {
   // ── Game over (active player who just finished a round) ───────────────
   if (phase === "game-over") {
     return (
-      <>
-        <Centered>
-          <Headline color="#FF6D00">GAME OVER</Headline>
-          {winnerName && (
-            <p className="font-boogaloo text-white text-2xl">{winnerName} wins!</p>
-          )}
-          <Muted>Scan the QR code again to join the next round.</Muted>
-        </Centered>
+      <div className="min-h-screen bg-mm-bg flex flex-col items-center justify-center px-5 py-8">
         <InstallBanner />
-      </>
+        <ResultsCard
+          winner={gameResults?.winner ?? (winnerName ? { name: winnerName } : null)}
+          scores={gameResults?.scores ?? []}
+          mySlot={mySlotRef.current}
+          title="MATCH OVER"
+          subtitle="Final results"
+          footer="Stay connected — the TV will start the next round."
+        />
+      </div>
     );
   }
 
@@ -662,6 +671,100 @@ export default function JoinPage() {
             s…
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ResultsCard({
+  winner,
+  scores,
+  mySlot,
+  title,
+  subtitle,
+  footer,
+}: {
+  winner: { id?: number; name: string; color?: string } | null;
+  scores: LiveScore[];
+  mySlot: number | null;
+  title: string;
+  subtitle?: string;
+  footer?: string;
+}) {
+  const topScore = scores[0] ?? null;
+  const myRow = mySlot != null ? scores.find((p) => p.id === mySlot) ?? null : null;
+
+  return (
+    <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-mm-surface/95 px-5 py-6 shadow-[0_0_40px_rgba(0,0,0,0.35)]">
+      <div className="text-center mb-5">
+        <p className="font-marker text-4xl text-mm-orange" style={{ textShadow: "0 0 18px rgba(255,109,0,0.45)" }}>
+          {title}
+        </p>
+        {winner && (
+          <p className="font-boogaloo text-2xl mt-2" style={{ color: winner.color ?? "#fff" }}>
+            {winner.name} won the wall!
+          </p>
+        )}
+        {subtitle && <p className="font-boogaloo text-white/45 text-sm mt-1">{subtitle}</p>}
+      </div>
+
+      {topScore && (
+        <div
+          className="rounded-[24px] px-5 py-5 text-center mb-5"
+          style={{
+            background: `${topScore.color}12`,
+            border: `2px solid ${topScore.color}66`,
+            boxShadow: `0 0 24px ${topScore.color}22`,
+          }}
+        >
+          <p className="font-marker text-6xl leading-none" style={{ color: topScore.color }}>
+            {topScore.pct}%
+          </p>
+          <p className="font-boogaloo text-white/80 text-lg mt-2">AREA CAPTURED</p>
+        </div>
+      )}
+
+      {myRow && (
+        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 mb-4">
+          <p className="font-marker text-xs text-white/35 tracking-widest mb-2">YOUR RESULT</p>
+          <div className="flex items-center justify-between">
+            <span className="font-boogaloo text-lg text-white">
+              #{myRow.rank} • {myRow.name}
+            </span>
+            <span className="font-marker text-2xl" style={{ color: myRow.color }}>{myRow.pct}%</span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <p className="font-marker text-xs text-white/35 tracking-widest mb-1">FINAL RANKING</p>
+        {scores.map((p, index) => (
+          <div
+            key={p.id}
+            className="flex items-center gap-3 px-3 py-3 rounded-2xl"
+            style={{
+              background: `${p.color}10`,
+              border: `1px solid ${p.color}44`,
+            }}
+          >
+            <span
+              className="font-marker text-sm w-7 text-center flex-shrink-0"
+              style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,.4)" }}
+            >
+              {index === 0 ? "👑" : `#${index + 1}`}
+            </span>
+            <span className="font-boogaloo text-white text-base flex-1 truncate">
+              {p.name}
+            </span>
+            <span className="font-marker text-lg flex-shrink-0" style={{ color: p.color }}>
+              {p.pct}%
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {footer && (
+        <p className="font-boogaloo text-white/45 text-center text-sm mt-5">{footer}</p>
       )}
     </div>
   );

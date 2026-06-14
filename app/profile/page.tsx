@@ -49,7 +49,7 @@ export default function ProfilePage() {
     if (!isLoaded) return;
     if (!user) { router.replace("/login"); return; }
 
-    fetch("/api/profile/me")
+    fetch(`/api/profile/me?ts=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then(({ player, weeklyRank: wr, weeklyScore: ws, gamesPlayed: gp, bestScore: bs }) => {
         if (player?.username) { setUsername(player.username); setNameInput(player.username); }
@@ -97,7 +97,8 @@ export default function ProfilePage() {
 
   const saveName = async () => {
     if (!nameInput.trim()) return;
-    setUsername(nameInput.trim());
+    const nextName = nameInput.trim();
+    setUsername(nextName);
     setEditingName(false);
     await save();
   };

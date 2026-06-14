@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getPlayer, getWeeklyLeaderboard } from "@/lib/db";
@@ -31,5 +34,8 @@ export async function GET() {
   }
 
   console.log('[/api/profile/me] player:', JSON.stringify(player));
-  return NextResponse.json({ player, weeklyRank, weeklyScore, gamesPlayed, bestScore });
+  return NextResponse.json(
+    { player, weeklyRank, weeklyScore, gamesPlayed, bestScore },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
+  );
 }

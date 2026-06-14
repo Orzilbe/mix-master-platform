@@ -251,28 +251,59 @@ export default function DisplayPage() {
                         />
 
                         {/* Game Over overlay built natively on the platform tier */}
-                        {endGameData && (
-                            <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center gap-6 animate-fade-in">
-                                <h1 className="font-marker text-6xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
-                                    GAME OVER
-                                </h1>
-                                <div
-                                    className="font-boogaloo text-3xl mb-2"
-                                    style={{ color: endGameData.winner?.color ?? "#fff" }}
-                                >
-                                    {endGameData.winner ? `${endGameData.winner.name} wins!` : 'Draw!'}
-                                </div>
+                        {endGameData && (() => {
+                            const topScore = endGameData.scores[0] ?? null;
+                            return (
+                                <div className="absolute inset-0 z-50 bg-black/88 flex items-center justify-center animate-fade-in overflow-hidden">
+                                    <div className="absolute inset-0 pointer-events-none">
+                                        <div className="absolute top-[12%] left-[15%] w-28 h-28 rounded-full blur-3xl opacity-35" style={{ background: "#FF2D78" }} />
+                                        <div className="absolute top-[18%] right-[18%] w-36 h-36 rounded-full blur-3xl opacity-30" style={{ background: "#00E5FF" }} />
+                                        <div className="absolute bottom-[20%] left-[22%] w-32 h-32 rounded-full blur-3xl opacity-25" style={{ background: "#76FF03" }} />
+                                        <div className="absolute bottom-[14%] right-[20%] w-32 h-32 rounded-full blur-3xl opacity-25" style={{ background: "#FF6D00" }} />
+                                        <div className="absolute inset-0" style={{ background: "radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 55%)" }} />
+                                    </div>
 
-                                <div className="flex flex-col gap-3 min-w-[320px]">
-                                    {endGameData.scores.map((p) => (
-                                        <div key={p.id} className="flex justify-between items-center px-5 py-3.5 rounded-xl bg-white/5 border border-white/10 font-boogaloo text-xl">
-                                            <span style={{ color: p.color }}>{p.name}</span>
-                                            <span className="font-marker" style={{ color: p.color }}>{p.pct}%</span>
+                                    <div className="relative w-full max-w-3xl mx-8 rounded-[32px] border border-white/10 bg-[#0d0d0d]/92 shadow-[0_0_60px_rgba(0,0,0,0.45)] px-10 py-10 flex flex-col items-center gap-7">
+                                        <div className="text-center">
+                                            <p className="font-marker text-6xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
+                                                GAME OVER
+                                            </p>
+                                            <p
+                                                className="font-boogaloo text-4xl mt-3"
+                                                style={{ color: endGameData.winner?.color ?? "#fff" }}
+                                            >
+                                                {endGameData.winner ? `${endGameData.winner.name} won the wall!` : "It's a draw!"}
+                                            </p>
                                         </div>
-                                    ))}
+
+                                        {topScore && (
+                                            <div className="text-center rounded-[28px] px-12 py-7 border-2" style={{ borderColor: `${topScore.color}88`, background: `${topScore.color}12`, boxShadow: `0 0 28px ${topScore.color}33` }}>
+                                                <p className="font-marker text-7xl leading-none" style={{ color: topScore.color }}>
+                                                    {topScore.pct}%
+                                                </p>
+                                                <p className="font-boogaloo text-white/80 text-2xl mt-2 tracking-wide">
+                                                    AREA CAPTURED
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="w-full max-w-xl flex flex-col gap-3">
+                                            {endGameData.scores.map((p, index) => (
+                                                <div key={p.id} className="flex justify-between items-center px-5 py-4 rounded-2xl bg-white/5 border border-white/10">
+                                                    <div className="flex items-center gap-4 min-w-0">
+                                                        <span className="font-marker text-xl w-10 text-center" style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,0.45)" }}>
+                                                            {index === 0 ? "👑" : `#${index + 1}`}
+                                                        </span>
+                                                        <span className="font-boogaloo text-2xl truncate" style={{ color: p.color }}>{p.name}</span>
+                                                    </div>
+                                                    <span className="font-marker text-3xl shrink-0" style={{ color: p.color }}>{p.pct}%</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
                 ) : (
                     <>
