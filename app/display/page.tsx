@@ -9,6 +9,7 @@ const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL ?? "https://mix-master-gray.vercel.app";
 const JOIN_URL    = `${APP_URL}/join`;
 const QR_SRC      = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=111111&bgcolor=ffffff&data=${encodeURIComponent(JOIN_URL)}`;
+const LOBBY_VIDEO_REPLAY_DELAY_MS = 30_000;
 
 type LobbyPlayer = {
     slotId:       number;
@@ -98,6 +99,7 @@ export default function DisplayPage() {
     const socketRef = useRef<Socket | null>(null);
     const rowRefs   = useRef<Map<string, HTMLDivElement>>(new Map());
     const oldTops   = useRef<Map<string, number>>(new Map());
+    const lobbyVideoRef = useRef<HTMLVideoElement | null>(null);
 
     const isCollapsed = phase === "game" && !sidebarExpanded;
 
@@ -171,6 +173,73 @@ export default function DisplayPage() {
         const id = setInterval(fetchDisplayBoard, 10_000);
         return () => clearInterval(id);
     }, [fetchDisplayBoard]);
+
+    /* ── Lobby background video ──────────────────────────────────────── */
+    useEffect(() => {
+        const video = lobbyVideoRef.current;
+        if (!video) return;
+
+        let replayTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const clearReplayTimer = () => {
+            if (!replayTimer) return;
+            clearTimeout(replayTimer);
+            replayTimer = null;
+        };
+
+        const playFromStart = () => {
+            clearReplayTimer();
+            video.muted = true;
+            video.loop = false;
+            try {
+                video.currentTime = 0;
+            } catch {
+                // Ignore browsers that block currentTime before metadata is ready.
+            }
+            const playPromise = video.play();
+            if (playPromise?.catch) playPromise.catch(() => {});
+        };
+
+        const scheduleReplay = () => {
+            clearReplayTimer();
+            if (phase !== "lobby") return;
+            replayTimer = setTimeout(playFromStart, LOBBY_VIDEO_REPLAY_DELAY_MS);
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                clearReplayTimer();
+                video.pause();
+                return;
+            }
+
+            if (phase === "lobby") {
+                if (video.ended) playFromStart();
+                else {
+                    const playPromise = video.play();
+                    if (playPromise?.catch) playPromise.catch(() => {});
+                }
+            }
+        };
+
+        video.muted = true;
+        video.loop = false;
+        video.addEventListener("ended", scheduleReplay);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        if (phase === "lobby") {
+            playFromStart();
+        } else {
+            clearReplayTimer();
+            video.pause();
+        }
+
+        return () => {
+            clearReplayTimer();
+            video.removeEventListener("ended", scheduleReplay);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+    }, [phase]);
 
     /* ── Week countdown ticker ───────────────────────────────────────── */
     useEffect(() => {
@@ -442,6 +511,25 @@ export default function DisplayPage() {
                         })()}                    </div>
                 ) : (
                     <>
+                    <video
+                        ref={lobbyVideoRef}
+                        className="absolute inset-0 h-full w-full object-cover pointer-events-none select-none"
+                        style={{ zIndex: 0 }}
+                        muted
+                        playsInline
+                        preload="auto"
+                        aria-hidden="true"
+                    >
+                        <source src="/MixMasterIntro_background.mp4" type="video/mp4" />
+                    </video>
+                    <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                            zIndex: 0,
+                            background:
+                                "radial-gradient(circle at center, rgba(0,0,0,.16) 0%, rgba(0,0,0,.34) 52%, rgba(0,0,0,.68) 100%), linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.5))",
+                        }}
+                    />
                     <div
                         className="relative flex flex-col items-center gap-8 px-8 py-10 w-full"
                         style={{ overflow: "visible", textAlign: "center", zIndex: 1 }}
