@@ -43,6 +43,55 @@ function weekCountdown(): string {
     return `${d}d ${h}h ${m}m`;
 }
 
+function FireworksLayer() {
+    const bursts = [
+        { left: "17%", top: "18%", color: "#FF2D78", delay: "0ms" },
+        { left: "82%", top: "20%", color: "#00E5FF", delay: "260ms" },
+        { left: "28%", top: "70%", color: "#76FF03", delay: "520ms" },
+        { left: "72%", top: "72%", color: "#FF6D00", delay: "760ms" },
+        { left: "50%", top: "12%", color: "#FFD600", delay: "1040ms" },
+    ];
+    const rays = Array.from({ length: 14 }, (_, i) => i);
+
+    return (
+        <>
+            {bursts.map((burst, burstIndex) => (
+                <div
+                    key={`${burst.left}-${burst.top}`}
+                    className="absolute w-2 h-2 rounded-full"
+                    style={{
+                        left: burst.left,
+                        top: burst.top,
+                        background: burst.color,
+                        boxShadow: `0 0 18px ${burst.color}`,
+                        animation: `firework-burst 1.7s ease-out ${burst.delay} infinite`,
+                    }}
+                >
+                    {rays.map((ray) => {
+                        const angle = (Math.PI * 2 * ray) / rays.length;
+                        const dist = 62 + ((ray + burstIndex) % 4) * 12;
+                        return (
+                            <span
+                                key={ray}
+                                className="absolute left-1/2 top-1/2 w-2 h-2 rounded-full"
+                                style={{
+                                    background: burst.color,
+                                    boxShadow: `0 0 12px ${burst.color}`,
+                                    transform: "translate(-50%, -50%)",
+                                    ['--tx' as string]: `${Math.cos(angle) * dist}px`,
+                                    ['--ty' as string]: `${Math.sin(angle) * dist}px`,
+                                    animation: `firework-dot 1.7s ease-out ${burst.delay} infinite`,
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            ))}
+        </>
+    );
+}
+
+
 export default function DisplayPage() {
     const [phase,           setPhase]           = useState<Phase>("lobby");
     const [players,         setPlayers]         = useState<LobbyPlayer[]>([]);
@@ -95,12 +144,14 @@ export default function DisplayPage() {
 
         socket.on("game-end", (data: { winner: any; scores: any[] }) => {
             setEndGameData(data);
-            // Revert back to lobby view at 7 seconds so room allocations persist in the layout context
-            setTimeout(() => {
+            // Let the results breathe, then reset the game server back into lobby so the TV START GAME button works again.
+            const resetDelay = window.setTimeout(() => {
+                socket.emit("play-again");
                 setPhase("lobby");
                 setEndGameData(null);
                 setSidebarExpanded(false);
-            }, 7000);
+            }, 8000);
+            socket.once("game-start", () => window.clearTimeout(resetDelay));
         });
         return () => { socket.disconnect(); };
     }, []);
@@ -238,6 +289,35 @@ export default function DisplayPage() {
     /* ── Layout ──────────────────────────────────────────────────────── */
     return (
         <div className="flex h-screen overflow-hidden bg-mm-bg">
+            <style>{`
+                @keyframes result-card-pop {
+                    0% { opacity: 0; transform: translateY(28px) scale(0.94); filter: blur(8px); }
+                    65% { opacity: 1; transform: translateY(-3px) scale(1.015); filter: blur(0); }
+                    100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+                }
+                @keyframes result-row-in {
+                    0% { opacity: 0; transform: translateX(-18px); }
+                    100% { opacity: 1; transform: translateX(0); }
+                }
+                @keyframes result-bar-grow {
+                    0% { transform: scaleX(0); }
+                    100% { transform: scaleX(1); }
+                }
+                @keyframes firework-burst {
+                    0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+                    12% { opacity: 1; }
+                    72% { opacity: .95; }
+                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+                }
+                @keyframes firework-dot {
+                    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+                    100% { transform: translate(var(--tx), var(--ty)) scale(0.15); opacity: 0; }
+                }
+                @keyframes winner-pulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.035); }
+                }
+            `}</style>
 
             {/* Left: game iframe or lobby */}
             <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
@@ -256,29 +336,41 @@ export default function DisplayPage() {
                             return (
                                 <div className="absolute inset-0 z-50 bg-black/88 flex items-center justify-center animate-fade-in overflow-hidden">
                                     <div className="absolute inset-0 pointer-events-none">
+                                        <div className="absolute inset-0 opacity-45" style={{ background: "radial-gradient(circle at center, rgba(255,255,255,0.08), transparent 50%)" }} />
+                                        <FireworksLayer />
                                         <div className="absolute top-[12%] left-[15%] w-28 h-28 rounded-full blur-3xl opacity-35" style={{ background: "#FF2D78" }} />
                                         <div className="absolute top-[18%] right-[18%] w-36 h-36 rounded-full blur-3xl opacity-30" style={{ background: "#00E5FF" }} />
                                         <div className="absolute bottom-[20%] left-[22%] w-32 h-32 rounded-full blur-3xl opacity-25" style={{ background: "#76FF03" }} />
                                         <div className="absolute bottom-[14%] right-[20%] w-32 h-32 rounded-full blur-3xl opacity-25" style={{ background: "#FF6D00" }} />
-                                        <div className="absolute inset-0" style={{ background: "radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 55%)" }} />
                                     </div>
 
-                                    <div className="relative w-full max-w-3xl mx-8 rounded-[32px] border border-white/10 bg-[#0d0d0d]/92 shadow-[0_0_60px_rgba(0,0,0,0.45)] px-10 py-10 flex flex-col items-center gap-7">
+                                    <div
+                                        className="relative w-full max-w-3xl mx-8 rounded-[34px] border border-white/10 bg-[#0d0d0d]/92 shadow-[0_0_70px_rgba(0,0,0,0.55)] px-10 py-10 flex flex-col items-center gap-7"
+                                        style={{ animation: "result-card-pop 680ms cubic-bezier(.16,1,.3,1) both" }}
+                                    >
+                                        <div className="absolute -inset-px rounded-[34px] pointer-events-none opacity-70" style={{ background: "linear-gradient(135deg, rgba(255,45,120,.5), transparent 28%, rgba(0,229,255,.35) 68%, rgba(118,255,3,.35))", mask: "linear-gradient(#000,#000) content-box, linear-gradient(#000,#000)", WebkitMask: "linear-gradient(#000,#000) content-box, linear-gradient(#000,#000)", padding: 1, WebkitMaskComposite: "xor", maskComposite: "exclude" }} />
+
                                         <div className="text-center">
-                                            <p className="font-marker text-6xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
+                                            <p className="font-marker text-7xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
                                                 GAME OVER
                                             </p>
-                                            <p
-                                                className="font-boogaloo text-4xl mt-3"
-                                                style={{ color: endGameData.winner?.color ?? "#fff" }}
+                                            <div
+                                                className="inline-flex mt-4 px-8 py-3 rounded-full border-2 font-boogaloo text-4xl"
+                                                style={{
+                                                    color: endGameData.winner?.color ?? "#fff",
+                                                    borderColor: `${endGameData.winner?.color ?? "#fff"}88`,
+                                                    background: `${endGameData.winner?.color ?? "#ffffff"}14`,
+                                                    boxShadow: `0 0 28px ${endGameData.winner?.color ?? "#ffffff"}33`,
+                                                    animation: "winner-pulse 1.4s ease-in-out infinite",
+                                                }}
                                             >
                                                 {endGameData.winner ? `${endGameData.winner.name} won the wall!` : "It's a draw!"}
-                                            </p>
+                                            </div>
                                         </div>
 
                                         {topScore && (
-                                            <div className="text-center rounded-[28px] px-12 py-7 border-2" style={{ borderColor: `${topScore.color}88`, background: `${topScore.color}12`, boxShadow: `0 0 28px ${topScore.color}33` }}>
-                                                <p className="font-marker text-7xl leading-none" style={{ color: topScore.color }}>
+                                            <div className="text-center rounded-[30px] px-14 py-7 border-2" style={{ borderColor: `${topScore.color}88`, background: `${topScore.color}12`, boxShadow: `0 0 32px ${topScore.color}33` }}>
+                                                <p className="font-marker text-8xl leading-none" style={{ color: topScore.color, textShadow: `0 0 28px ${topScore.color}66` }}>
                                                     {topScore.pct}%
                                                 </p>
                                                 <p className="font-boogaloo text-white/80 text-2xl mt-2 tracking-wide">
@@ -288,23 +380,36 @@ export default function DisplayPage() {
                                         )}
 
                                         <div className="w-full max-w-xl flex flex-col gap-3">
-                                            {endGameData.scores.map((p, index) => (
-                                                <div key={p.id} className="flex justify-between items-center px-5 py-4 rounded-2xl bg-white/5 border border-white/10">
-                                                    <div className="flex items-center gap-4 min-w-0">
-                                                        <span className="font-marker text-xl w-10 text-center" style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,0.45)" }}>
-                                                            {index === 0 ? "👑" : `#${index + 1}`}
-                                                        </span>
-                                                        <span className="font-boogaloo text-2xl truncate" style={{ color: p.color }}>{p.name}</span>
+                                            {endGameData.scores.map((p, index) => {
+                                                const pct = Math.max(0, Math.min(100, Number(p.pct) || 0));
+                                                return (
+                                                    <div
+                                                        key={p.id}
+                                                        className="relative overflow-hidden px-5 py-4 rounded-2xl bg-white/5 border border-white/10"
+                                                        style={{ animation: `result-row-in 420ms ease-out ${index * 90 + 120}ms both` }}
+                                                    >
+                                                        <div className="absolute inset-y-0 left-0 opacity-18 origin-left" style={{ width: `${pct}%`, background: p.color, animation: `result-bar-grow 900ms ease-out ${index * 110 + 260}ms both` }} />
+                                                        <div className="relative flex justify-between items-center gap-4">
+                                                            <div className="flex items-center gap-4 min-w-0">
+                                                                <span className="font-marker text-xl w-10 text-center" style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,0.45)" }}>
+                                                                    {index === 0 ? "👑" : `#${index + 1}`}
+                                                                </span>
+                                                                <span className="font-boogaloo text-2xl truncate" style={{ color: p.color }}>{p.name}</span>
+                                                            </div>
+                                                            <span className="font-marker text-3xl shrink-0" style={{ color: p.color }}>{p.pct}%</span>
+                                                        </div>
                                                     </div>
-                                                    <span className="font-marker text-3xl shrink-0" style={{ color: p.color }}>{p.pct}%</span>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
+
+                                        <p className="font-boogaloo text-white/45 text-lg text-center">
+                                            Returning to the lobby for the next round…
+                                        </p>
                                     </div>
                                 </div>
                             );
-                        })()}
-                    </div>
+                        })()}                    </div>
                 ) : (
                     <>
                     <GraffitiAnimation visible={players.length === 0} />

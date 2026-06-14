@@ -258,6 +258,17 @@ export default function JoinPage() {
       }
     });
 
+    socket.on("lobby-reset", () => {
+      if (respawnTimer.current) clearInterval(respawnTimer.current);
+      setGameEnding(false);
+      setWinner(null);
+      setGameResults(null);
+      setLiveScores([]);
+      setRank(null);
+      setPct("0");
+      if (mySlotRef.current != null) setPhase("waiting");
+    });
+
     return () => {
       socket.disconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
@@ -693,79 +704,158 @@ function ResultsCard({
 }) {
   const topScore = scores[0] ?? null;
   const myRow = mySlot != null ? scores.find((p) => p.id === mySlot) ?? null : null;
+  const accent = winner?.color ?? topScore?.color ?? "#FF2D78";
+  const confetti = ["#FF2D78", "#00E5FF", "#76FF03", "#FF6D00", "#FFD600"];
 
   return (
-    <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-mm-surface/95 px-5 py-6 shadow-[0_0_40px_rgba(0,0,0,0.35)]">
-      <div className="text-center mb-5">
-        <p className="font-marker text-4xl text-mm-orange" style={{ textShadow: "0 0 18px rgba(255,109,0,0.45)" }}>
-          {title}
-        </p>
-        {winner && (
-          <p className="font-boogaloo text-2xl mt-2" style={{ color: winner.color ?? "#fff" }}>
-            {winner.name} won the wall!
-          </p>
-        )}
-        {subtitle && <p className="font-boogaloo text-white/45 text-sm mt-1">{subtitle}</p>}
-      </div>
+    <div className="w-full max-w-md relative">
+      <style>{`
+        @keyframes phone-result-pop {
+          0% { opacity: 0; transform: translateY(18px) scale(.96); filter: blur(6px); }
+          70% { opacity: 1; transform: translateY(-2px) scale(1.01); filter: blur(0); }
+          100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes phone-confetti-fall {
+          0% { transform: translateY(-18px) rotate(0deg); opacity: 0; }
+          15% { opacity: 1; }
+          100% { transform: translateY(34px) rotate(180deg); opacity: 0; }
+        }
+        @keyframes phone-score-row {
+          0% { opacity: 0; transform: translateX(-14px); }
+          100% { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes phone-score-fill {
+          0% { transform: scaleX(0); }
+          100% { transform: scaleX(1); }
+        }
+        @keyframes phone-locked-pulse {
+          0%, 100% { opacity: .55; }
+          50% { opacity: 1; }
+        }
+      `}</style>
 
-      {topScore && (
-        <div
-          className="rounded-[24px] px-5 py-5 text-center mb-5"
+      {confetti.map((color, i) => (
+        <span
+          key={`${color}-${i}`}
+          className="absolute top-1 rounded-sm pointer-events-none"
           style={{
-            background: `${topScore.color}12`,
-            border: `2px solid ${topScore.color}66`,
-            boxShadow: `0 0 24px ${topScore.color}22`,
+            left: `${12 + i * 19}%`,
+            width: 8,
+            height: i % 2 === 0 ? 14 : 8,
+            background: color,
+            boxShadow: `0 0 10px ${color}`,
+            animation: `phone-confetti-fall 1.8s ease-in-out ${i * 130}ms infinite`,
+            zIndex: 1,
           }}
-        >
-          <p className="font-marker text-6xl leading-none" style={{ color: topScore.color }}>
-            {topScore.pct}%
+        />
+      ))}
+
+      <div
+        className="relative overflow-hidden rounded-[30px] border bg-mm-surface/95 px-5 py-6 shadow-[0_0_40px_rgba(0,0,0,0.35)]"
+        style={{
+          borderColor: `${accent}55`,
+          boxShadow: `0 0 36px ${accent}22, 0 0 40px rgba(0,0,0,.35)`,
+          animation: "phone-result-pop 560ms cubic-bezier(.16,1,.3,1) both",
+        }}
+      >
+        <div className="absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full blur-3xl opacity-25" style={{ background: accent }} />
+
+        <div className="relative text-center mb-5">
+          <p className="font-marker text-4xl text-mm-orange" style={{ textShadow: "0 0 18px rgba(255,109,0,0.45)" }}>
+            {title}
           </p>
-          <p className="font-boogaloo text-white/80 text-lg mt-2">AREA CAPTURED</p>
+          {winner && (
+            <div
+              className="inline-flex mt-3 px-5 py-2 rounded-full border font-boogaloo text-2xl"
+              style={{ color: accent, borderColor: `${accent}77`, background: `${accent}12` }}
+            >
+              {winner.name} won the wall!
+            </div>
+          )}
+          {subtitle && <p className="font-boogaloo text-white/45 text-sm mt-2">{subtitle}</p>}
         </div>
-      )}
 
-      {myRow && (
-        <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 mb-4">
-          <p className="font-marker text-xs text-white/35 tracking-widest mb-2">YOUR RESULT</p>
-          <div className="flex items-center justify-between">
-            <span className="font-boogaloo text-lg text-white">
-              #{myRow.rank} • {myRow.name}
-            </span>
-            <span className="font-marker text-2xl" style={{ color: myRow.color }}>{myRow.pct}%</span>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <p className="font-marker text-xs text-white/35 tracking-widest mb-1">FINAL RANKING</p>
-        {scores.map((p, index) => (
+        {topScore ? (
           <div
-            key={p.id}
-            className="flex items-center gap-3 px-3 py-3 rounded-2xl"
+            className="relative rounded-[24px] px-5 py-5 text-center mb-5 overflow-hidden"
             style={{
-              background: `${p.color}10`,
-              border: `1px solid ${p.color}44`,
+              background: `${topScore.color}12`,
+              border: `2px solid ${topScore.color}66`,
+              boxShadow: `0 0 24px ${topScore.color}22`,
             }}
           >
-            <span
-              className="font-marker text-sm w-7 text-center flex-shrink-0"
-              style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,.4)" }}
-            >
-              {index === 0 ? "👑" : `#${index + 1}`}
-            </span>
-            <span className="font-boogaloo text-white text-base flex-1 truncate">
-              {p.name}
-            </span>
-            <span className="font-marker text-lg flex-shrink-0" style={{ color: p.color }}>
-              {p.pct}%
-            </span>
+            <div className="absolute inset-y-0 left-0 opacity-15 origin-left" style={{ width: `${Math.max(0, Math.min(100, Number(topScore.pct) || 0))}%`, background: topScore.color, animation: "phone-score-fill 850ms ease-out 160ms both" }} />
+            <div className="relative">
+              <p className="font-marker text-6xl leading-none" style={{ color: topScore.color, textShadow: `0 0 18px ${topScore.color}66` }}>
+                {topScore.pct}%
+              </p>
+              <p className="font-boogaloo text-white/80 text-lg mt-2">AREA CAPTURED</p>
+            </div>
           </div>
-        ))}
-      </div>
+        ) : (
+          <div className="rounded-[24px] px-5 py-8 text-center mb-5 border border-white/10 bg-black/20">
+            <Spinner />
+            <p className="font-boogaloo text-white/45 text-sm mt-3">Waiting for final scores…</p>
+          </div>
+        )}
 
-      {footer && (
-        <p className="font-boogaloo text-white/45 text-center text-sm mt-5">{footer}</p>
-      )}
+        {myRow && (
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 mb-4">
+            <p className="font-marker text-xs text-white/35 tracking-widest mb-2">YOUR RESULT</p>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-boogaloo text-lg text-white truncate">
+                #{myRow.rank} • {myRow.name}
+              </span>
+              <span className="font-marker text-2xl shrink-0" style={{ color: myRow.color }}>{myRow.pct}%</span>
+            </div>
+          </div>
+        )}
+
+        {scores.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="font-marker text-xs text-white/35 tracking-widest mb-1">FINAL RANKING</p>
+            {scores.map((p, index) => {
+              const pct = Math.max(0, Math.min(100, Number(p.pct) || 0));
+              return (
+                <div
+                  key={p.id}
+                  className="relative overflow-hidden rounded-2xl px-3 py-3"
+                  style={{
+                    background: `${p.color}10`,
+                    border: `1px solid ${p.color}44`,
+                    animation: `phone-score-row 360ms ease-out ${index * 80 + 120}ms both`,
+                  }}
+                >
+                  <div className="absolute inset-y-0 left-0 opacity-16 origin-left" style={{ width: `${pct}%`, background: p.color, animation: `phone-score-fill 780ms ease-out ${index * 90 + 220}ms both` }} />
+                  <div className="relative flex items-center gap-3">
+                    <span
+                      className="font-marker text-sm w-7 text-center flex-shrink-0"
+                      style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,.4)" }}
+                    >
+                      {index === 0 ? "👑" : `#${index + 1}`}
+                    </span>
+                    <span className="font-boogaloo text-white text-base flex-1 truncate">
+                      {p.name}
+                    </span>
+                    <span className="font-marker text-lg flex-shrink-0" style={{ color: p.color }}>
+                      {p.pct}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center">
+          <p className="font-marker text-xs tracking-widest" style={{ color: accent, animation: "phone-locked-pulse 1.4s ease-in-out infinite" }}>
+            CONTROLLER LOCKED
+          </p>
+          {footer && (
+            <p className="font-boogaloo text-white/45 text-sm mt-1">{footer}</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
