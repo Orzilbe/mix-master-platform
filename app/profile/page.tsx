@@ -11,6 +11,7 @@ import {
   DEFAULT_AVATAR,
 } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
+import { cancelGameSocketDisconnect, peekGameSocket, scheduleGameSocketDisconnect } from "@/lib/gameSocket";
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
@@ -35,6 +36,11 @@ export default function ProfilePage() {
   const [notifSupported, setNotifSupported] = useState(true);
 
   const hasUnsaved = JSON.stringify(draftConfig) !== JSON.stringify(savedConfig);
+
+  useEffect(() => {
+    cancelGameSocketDisconnect();
+    return () => scheduleGameSocketDisconnect();
+  }, []);
 
   useEffect(() => {
     if (typeof Notification === "undefined") {
@@ -70,16 +76,17 @@ export default function ProfilePage() {
       });
   }, [isLoaded, user, router]);
 
-  const save = async (overrideConfig?: AvatarConfig) => {
+  const save = async (overrideConfig?: AvatarConfig, overrideUsername?: string) => {
     const cfg = overrideConfig ?? draftConfig;
-    console.log('[profile] save() called — sending:', { username: username.trim(), avatar_config: cfg });
+    const nextUsername = (overrideUsername ?? username).trim();
+    console.log('[profile] save() called — sending:', { username: nextUsername, avatar_config: cfg });
     setSaving(true);
     setSaveStatus("idle");
     try {
       const res = await fetch("/api/profile/save", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ username: username.trim(), avatar_config: cfg }),
+        body:    JSON.stringify({ username: nextUsername, avatar_config: cfg }),
       });
       const body = await res.json().catch(() => ({}));
       console.log('[profile] save() response:', res.status, body);
@@ -87,6 +94,18 @@ export default function ProfilePage() {
       setSavedConfig(cfg);
       localStorage.setItem("mix-master-avatar-config", JSON.stringify(cfg));
       localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("mix-master-avatar-saved", { detail: cfg }));
+
+      const liveSocket = peekGameSocket();
+      if (liveSocket?.connected && user) {
+        liveSocket.emit("lobby-profile-update", {
+          userId:       user.id,
+          username:     nextUsername,
+          avatarUrl:    user.imageUrl ?? null,
+          avatarConfig: cfg,
+        });
+      }
+
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
@@ -102,7 +121,7 @@ export default function ProfilePage() {
     const nextName = nameInput.trim();
     setUsername(nextName);
     setEditingName(false);
-    await save();
+    await save(undefined, nextName);
   };
 
   const updateConfig = (next: AvatarConfig) => {

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS players (
   clerk_id    TEXT        UNIQUE NOT NULL,
   username    TEXT        NOT NULL,
   avatar_url  TEXT,
+  avatar_config JSONB,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -34,6 +35,7 @@ SELECT
   p.clerk_id,
   p.username,
   p.avatar_url,
+  p.avatar_config,
   DATE_TRUNC('week', gs.played_at)                          AS week_start,
   EXTRACT(WEEK  FROM gs.played_at)::INT                     AS week_number,
   EXTRACT(ISOYEAR FROM gs.played_at)::INT                   AS week_year,
@@ -42,7 +44,7 @@ SELECT
 FROM players p
 JOIN game_sessions gs ON gs.player_id = p.id
 GROUP BY
-  p.id, p.clerk_id, p.username, p.avatar_url,
+  p.id, p.clerk_id, p.username, p.avatar_url, p.avatar_config,
   DATE_TRUNC('week', gs.played_at),
   EXTRACT(WEEK FROM gs.played_at),
   EXTRACT(ISOYEAR FROM gs.played_at)

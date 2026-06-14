@@ -4,6 +4,7 @@ import { getWeeklyLeaderboard, getLatestChampion } from "@/lib/db";
 import type { AvatarConfig } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   const [rows, champion] = await Promise.all([
@@ -35,5 +36,8 @@ export async function GET() {
     avatar_config: avatarMap.get(r.player_id) ?? null,
   }));
 
-  return NextResponse.json({ board, champion });
+  return NextResponse.json(
+    { board, champion },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+  );
 }

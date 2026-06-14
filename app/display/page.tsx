@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import { GraffitiAnimation } from "@/components/GraffitiAnimation";
@@ -119,6 +119,18 @@ export default function DisplayPage() {
         });
     }, [displayData]);
 
+    const fetchDisplayBoard = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/leaderboard/display?ts=${Date.now()}`, { cache: "no-store" });
+            if (!res.ok) return;
+            const data: DisplayData = await res.json();
+            const snapshot = new Map<string, number>();
+            rowRefs.current.forEach((el, id) => snapshot.set(id, el.getBoundingClientRect().top));
+            oldTops.current = snapshot;
+            setDisplayData(data);
+        } catch { /* silently skip */ }
+    }, []);
+
     /* ── Socket.io ───────────────────────────────────────────────────── */
     useEffect(() => {
         const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
@@ -145,28 +157,21 @@ export default function DisplayPage() {
             setPhase("lobby");
             setEndGameData(null);
             setSidebarExpanded(false);
+            fetchDisplayBoard();
         });
 
+        socket.on("scores-saved", fetchDisplayBoard);
+        socket.on("platform-leaderboard-refresh", fetchDisplayBoard);
+
         return () => { socket.disconnect(); };
-    }, []);
+    }, [fetchDisplayBoard]);
 
     /* ── Leaderboard polling ─────────────────────────────────────────── */
     useEffect(() => {
-        const fetchBoard = async () => {
-            try {
-                const res = await fetch("/api/leaderboard/display");
-                if (!res.ok) return;
-                const data: DisplayData = await res.json();
-                const snapshot = new Map<string, number>();
-                rowRefs.current.forEach((el, id) => snapshot.set(id, el.getBoundingClientRect().top));
-                oldTops.current = snapshot;
-                setDisplayData(data);
-            } catch { /* silently skip */ }
-        };
-        fetchBoard();
-        const id = setInterval(fetchBoard, 30_000);
+        fetchDisplayBoard();
+        const id = setInterval(fetchDisplayBoard, 30_000);
         return () => clearInterval(id);
-    }, []);
+    }, [fetchDisplayBoard]);
 
     /* ── Week countdown ticker ───────────────────────────────────────── */
     useEffect(() => {

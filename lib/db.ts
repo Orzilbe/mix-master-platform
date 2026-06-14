@@ -93,6 +93,7 @@ export async function saveGameSession(
 
 export async function getWeeklyLeaderboard(
   weekOffset = 0, // 0 = current week, -1 = last week
+  limit = 1000,
 ): Promise<WeeklyLeaderboardRow[]> {
   const now = new Date();
   now.setDate(now.getDate() + weekOffset * 7);
@@ -108,7 +109,7 @@ export async function getWeeklyLeaderboard(
     .eq("week_number", isoWeek)
     .eq("week_year", isoYear)
     .order("total_score", { ascending: false })
-    .limit(20);
+    .limit(limit);
 
   if (error) throw error;
   return (data ?? []) as WeeklyLeaderboardRow[];

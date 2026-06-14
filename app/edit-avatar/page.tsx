@@ -11,6 +11,7 @@ import {
   DEFAULT_AVATAR,
 } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
+import { cancelGameSocketDisconnect, peekGameSocket, scheduleGameSocketDisconnect } from "@/lib/gameSocket";
 
 export default function EditAvatarPage() {
   const { user, isLoaded } = useUser();
@@ -21,6 +22,11 @@ export default function EditAvatarPage() {
   const [config,   setConfig]   = useState<AvatarConfig>(DEFAULT_AVATAR);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState<string | null>(null);
+
+  useEffect(() => {
+    cancelGameSocketDisconnect();
+    return () => scheduleGameSocketDisconnect();
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -52,6 +58,18 @@ export default function EditAvatarPage() {
       if (!res.ok) throw new Error("Save failed");
       localStorage.setItem("mix-master-avatar-config", JSON.stringify(config));
       localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("mix-master-avatar-saved", { detail: config }));
+
+      const liveSocket = peekGameSocket();
+      if (liveSocket?.connected && user) {
+        liveSocket.emit("lobby-profile-update", {
+          userId:       user.id,
+          username:     username.trim(),
+          avatarUrl:    user.imageUrl ?? null,
+          avatarConfig: config,
+        });
+      }
+
       router.refresh();
       router.replace(`/join?avatarUpdated=${Date.now()}`);
     } catch {

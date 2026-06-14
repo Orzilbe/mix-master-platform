@@ -2,6 +2,9 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getWeeklyLeaderboard } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
   const { userId } = auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,5 +22,8 @@ export async function GET() {
   const myRank  = myIdx >= 0 ? myIdx + 1 : null;
   const myScore = myIdx >= 0 ? rows[myIdx].total_score : 0;
 
-  return NextResponse.json({ board, myRank, myScore });
+  return NextResponse.json(
+    { board, myRank, myScore },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+  );
 }

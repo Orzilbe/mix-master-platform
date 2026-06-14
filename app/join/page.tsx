@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import type { AvatarConfig } from "@/lib/types";
-import { io, Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
+import { cancelGameSocketDisconnect, getGameSocket, scheduleGameSocketDisconnect } from "@/lib/gameSocket";
 import { InstallBanner } from "@/components/InstallBanner";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
@@ -202,7 +203,8 @@ export default function JoinPage() {
       return;
     }
 
-    const socket = io(GAME_SERVER, { transports: ["websocket", "polling"] });
+    cancelGameSocketDisconnect();
+    const socket = getGameSocket();
     socketRef.current = socket;
 
     const emitJoin = () => {
@@ -218,8 +220,11 @@ export default function JoinPage() {
       });
     };
 
-    socket.on("connect",       emitJoin);
-    socket.on("connect_error", () => setServerState("failed"));
+    const onConnectError = () => setServerState("failed");
+
+    socket.on("connect", emitJoin);
+    socket.on("connect_error", onConnectError);
+    if (socket.connected) emitJoin();
 
     socket.on("lobby-join-ack", ({ slotId, color, username: serverName, avatarConfig: serverAvatarConfig }: { slotId: number; color: string; username?: string; avatarConfig?: AvatarConfig | null }) => {
       mySlotRef.current = slotId;
@@ -277,11 +282,26 @@ export default function JoinPage() {
       setPhase("playing");
     });
 
+    const fetchWeeklyBoard = () => {
+      fetch(`/api/leaderboard/weekly?ts=${Date.now()}`, { cache: "no-store" })
+        .then(r => r.json())
+        .then(({ board, myRank, myScore }) => {
+          setMiniBoard(board ?? []);
+          if (myRank  != null) setWeeklyRank(myRank);
+          if (myScore != null) setWeeklyScore(myScore);
+          setBoardCountdown(30);
+        })
+        .catch(() => {});
+    };
+
     socket.on("leaderboard-update", (board: LiveScore[]) => {
       setLiveScores(board);
       const me = board.find(p => p.id === mySlotRef.current);
       if (me) { setRank(me.rank); setPct(me.pct); }
     });
+
+    socket.on("scores-saved", fetchWeeklyBoard);
+    socket.on("platform-leaderboard-refresh", fetchWeeklyBoard);
 
     socket.on("player-died", ({ respawnIn }: { respawnIn: number }) => {
       if (respawnTimer.current) clearInterval(respawnTimer.current);
@@ -325,7 +345,22 @@ export default function JoinPage() {
     });
 
     return () => {
-      socket.disconnect();
+      socket.off("connect", emitJoin);
+      socket.off("connect_error", onConnectError);
+      socket.off("lobby-join-ack");
+      socket.off("lobby-full");
+      socket.off("game-in-progress");
+      socket.off("queue-position");
+      socket.off("promoted-to-player");
+      socket.off("color-assigned");
+      socket.off("game-start");
+      socket.off("leaderboard-update");
+      socket.off("scores-saved");
+      socket.off("platform-leaderboard-refresh");
+      socket.off("player-died");
+      socket.off("game-end");
+      socket.off("lobby-reset");
+      scheduleGameSocketDisconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
     };
   }, [emitProfileUpdate, isLoaded, name, router, serverState, user]);
@@ -335,7 +370,7 @@ export default function JoinPage() {
     if (phase !== "waiting") return;
 
     const fetchBoard = () => {
-      fetch("/api/leaderboard/weekly")
+      fetch(`/api/leaderboard/weekly?ts=${Date.now()}`, { cache: "no-store" })
         .then(r => r.json())
         .then(({ board, myRank, myScore }) => {
           setMiniBoard(board ?? []);
