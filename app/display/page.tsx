@@ -531,24 +531,31 @@ export default function DisplayPage() {
                         }}
                     />
                     <div
-                        className="relative flex flex-col items-center gap-8 px-8 py-10 w-full"
-                        style={{ overflow: "visible", textAlign: "center", zIndex: 1 }}
+                        className="relative flex flex-col items-center gap-6 px-8 py-8 w-full"
+                        style={{ overflow: "visible", textAlign: "center", zIndex: 1, transform: "translateY(-24px)" }}
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src="/logo.png"
                             alt="Mix Master"
                             style={{
-                                height:    "260px",
+                                height:    "320px",
                                 width:     "auto",
                                 display:   "block",
-                                margin:    "0 auto 8px auto",
+                                margin:    "-12px auto 0 auto",
                                 objectFit: "contain",
-                                filter:    "drop-shadow(0 0 20px rgba(255,45,120,0.6))",
+                                filter:    "drop-shadow(0 0 26px rgba(255,45,120,0.65))",
+                                transform: "translateY(-10px)",
                             }}
                         />
 
-                        <div className="flex flex-col items-center gap-3">
+                        <div
+                            className="flex flex-col items-center gap-3"
+                            style={{
+                                textShadow: "0 2px 0 rgba(0,0,0,0.95), 0 0 14px rgba(0,0,0,0.65)",
+                                WebkitTextStroke: "0.7px rgba(0,0,0,0.7)",
+                            }}
+                        >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src={QR_SRC}
@@ -557,10 +564,10 @@ export default function DisplayPage() {
                                 height={200}
                                 className="rounded-2xl border-[5px] border-white shadow-2xl"
                             />
-                            <p className="font-boogaloo text-white/55 text-lg">
+                            <p className="font-boogaloo text-white text-lg">
                                 First time? Scan to install 📲
                             </p>
-                            <p className="font-boogaloo text-white/40 text-lg">
+                            <p className="font-boogaloo text-white/95 text-lg">
                                 Already have it? Scan to join 🎮
                             </p>
                         </div>
@@ -591,10 +598,10 @@ export default function DisplayPage() {
                         )}
 
                         {players.length === 0 && (
-                            <p className="font-boogaloo text-white/25 text-lg">Waiting for players to scan…</p>
+                            <p className="font-boogaloo text-white/95 text-lg" style={{ textShadow: "0 2px 0 rgba(0,0,0,0.95), 0 0 14px rgba(0,0,0,0.7)", WebkitTextStroke: "0.7px rgba(0,0,0,0.75)" }}>Waiting for players to scan…</p>
                         )}
                         {players.length === 1 && (
-                            <p className="font-boogaloo text-white/35 text-lg">1 player connected — need at least 1 more…</p>
+                            <p className="font-boogaloo text-white/95 text-lg" style={{ textShadow: "0 2px 0 rgba(0,0,0,0.95), 0 0 14px rgba(0,0,0,0.7)", WebkitTextStroke: "0.7px rgba(0,0,0,0.75)" }}>1 player connected — need at least 1 more…</p>
                         )}
                         {players.length >= 2 && (
                             <button
