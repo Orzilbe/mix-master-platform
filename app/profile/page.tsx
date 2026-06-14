@@ -91,18 +91,21 @@ export default function ProfilePage() {
       const body = await res.json().catch(() => ({}));
       console.log('[profile] save() response:', res.status, body);
       if (!res.ok) throw new Error("Save failed");
-      setSavedConfig(cfg);
-      localStorage.setItem("mix-master-avatar-config", JSON.stringify(cfg));
-      localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
-      window.dispatchEvent(new CustomEvent("mix-master-avatar-saved", { detail: cfg }));
+      const savedPlayer = body?.player;
+      const savedAvatar = (savedPlayer?.avatar_config ?? cfg) as AvatarConfig;
+      const savedName = (savedPlayer?.username ?? nextUsername) as string;
+      setSavedConfig(savedAvatar);
+      setDraftConfig(savedAvatar);
+      setUsername(savedName);
+      setNameInput(savedName);
 
       const liveSocket = peekGameSocket();
       if (liveSocket?.connected && user) {
         liveSocket.emit("lobby-profile-update", {
           userId:       user.id,
-          username:     nextUsername,
+          username:     savedName,
           avatarUrl:    user.imageUrl ?? null,
-          avatarConfig: cfg,
+          avatarConfig: savedAvatar,
         });
       }
 

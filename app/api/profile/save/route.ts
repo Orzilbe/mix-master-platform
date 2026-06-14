@@ -26,5 +26,8 @@ export async function POST(req: NextRequest) {
   }
 
   const player = await updatePlayerProfile(userId, username, cfg);
-  return NextResponse.json({ player });
+  return NextResponse.json(
+    { player },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+  );
 }

@@ -3,6 +3,9 @@ import LeaderboardTable from "@/components/LeaderboardTable";
 import WeeklyChampion from "@/components/WeeklyChampion";
 import { getLatestChampion, getWeeklyLeaderboard, getAllTimeLeaderboard } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function LeaderboardPage() {
   const [champion, thisWeek, lastWeek, allTime] = await Promise.all([
     getLatestChampion().catch(() => null),

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlayer } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function authorized(req: NextRequest): boolean {
   return req.headers.get("x-api-secret") === process.env.GAME_API_SECRET;
 }

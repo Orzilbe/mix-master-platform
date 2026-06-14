@@ -3,7 +3,6 @@
 import { CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
-import { GraffitiAnimation } from "@/components/GraffitiAnimation";
 import type { AvatarConfig, WeeklyLeaderboardRow, WeeklyChampion } from "@/lib/types";
 
 const GAME_SERVER = process.env.NEXT_PUBLIC_GAME_SERVER_URL!;
@@ -169,7 +168,7 @@ export default function DisplayPage() {
     /* ── Leaderboard polling ─────────────────────────────────────────── */
     useEffect(() => {
         fetchDisplayBoard();
-        const id = setInterval(fetchDisplayBoard, 30_000);
+        const id = setInterval(fetchDisplayBoard, 10_000);
         return () => clearInterval(id);
     }, [fetchDisplayBoard]);
 
@@ -443,7 +442,6 @@ export default function DisplayPage() {
                         })()}                    </div>
                 ) : (
                     <>
-                    <GraffitiAnimation visible={players.length === 0} />
                     <div
                         className="relative flex flex-col items-center gap-8 px-8 py-10 w-full"
                         style={{ overflow: "visible", textAlign: "center", zIndex: 1 }}
@@ -453,10 +451,10 @@ export default function DisplayPage() {
                             src="/logo.png"
                             alt="Mix Master"
                             style={{
-                                height:    "160px",
+                                height:    "260px",
                                 width:     "auto",
                                 display:   "block",
-                                margin:    "0 auto 20px auto",
+                                margin:    "0 auto 8px auto",
                                 objectFit: "contain",
                                 filter:    "drop-shadow(0 0 20px rgba(255,45,120,0.6))",
                             }}

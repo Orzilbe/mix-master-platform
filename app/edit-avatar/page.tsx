@@ -55,18 +55,21 @@ export default function EditAvatarPage() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ username: username.trim(), avatar_config: config }),
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error("Save failed");
-      localStorage.setItem("mix-master-avatar-config", JSON.stringify(config));
-      localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
-      window.dispatchEvent(new CustomEvent("mix-master-avatar-saved", { detail: config }));
+      const savedPlayer = body?.player;
+      const savedAvatar = (savedPlayer?.avatar_config ?? config) as AvatarConfig;
+      const savedName = (savedPlayer?.username ?? username.trim()) as string;
+      setConfig(savedAvatar);
+      setUsername(savedName);
 
       const liveSocket = peekGameSocket();
       if (liveSocket?.connected && user) {
         liveSocket.emit("lobby-profile-update", {
           userId:       user.id,
-          username:     username.trim(),
+          username:     savedName,
           avatarUrl:    user.imageUrl ?? null,
-          avatarConfig: config,
+          avatarConfig: savedAvatar,
         });
       }
 

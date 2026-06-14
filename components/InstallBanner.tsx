@@ -7,8 +7,6 @@ export function InstallBanner() {
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem("pwa-banner-dismissed")) return;
-
     const ua         = navigator.userAgent;
     const ios        = /iPhone|iPad|iPod/.test(ua);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -22,7 +20,6 @@ export function InstallBanner() {
   }, []);
 
   const dismiss = () => {
-    localStorage.setItem("pwa-banner-dismissed", "1");
     setShow(false);
   };
 

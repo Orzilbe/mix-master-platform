@@ -62,7 +62,7 @@ export default function JoinPage() {
 
   // ── Mode A: lobby mini-leaderboard ───────────────────────────────────────
   const [miniBoard,      setMiniBoard]      = useState<MiniRow[]>([]);
-  const [boardCountdown, setBoardCountdown] = useState(30);
+  const [boardCountdown, setBoardCountdown] = useState(10);
 
   // ── Mode C: spectator / queue ────────────────────────────────────────────
   const [liveScores,     setLiveScores]     = useState<LiveScore[]>([]);
@@ -103,14 +103,10 @@ export default function JoinPage() {
         }).catch(() => {});
 
         setAvatarConfig(DEFAULT_AVATAR);
-        localStorage.setItem("mix-master-avatar-config", JSON.stringify(DEFAULT_AVATAR));
-        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
         emitProfileUpdate(DEFAULT_AVATAR, name);
       } else {
         const cfg = player.avatar_config as AvatarConfig;
         setAvatarConfig(cfg);
-        localStorage.setItem("mix-master-avatar-config", JSON.stringify(cfg));
-        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
         emitProfileUpdate(cfg, name);
       }
 
@@ -118,10 +114,7 @@ export default function JoinPage() {
       setWeeklyScore(ws ?? 0);
       setProfileReady(true);
     } catch {
-      try {
-        const cached = localStorage.getItem("mix-master-avatar-config");
-        if (cached) setAvatarConfig(JSON.parse(cached) as AvatarConfig);
-      } catch { /* ignore cache parse errors */ }
+      setAvatarConfig(DEFAULT_AVATAR);
       setProfileReady(true);
     }
   }, [emitProfileUpdate, isLoaded, user]);
@@ -148,12 +141,10 @@ export default function JoinPage() {
 
     window.addEventListener("focus", onVisibleOrFocused);
     document.addEventListener("visibilitychange", onVisibleOrFocused);
-    window.addEventListener("storage", onVisibleOrFocused);
 
     return () => {
       window.removeEventListener("focus", onVisibleOrFocused);
       document.removeEventListener("visibilitychange", onVisibleOrFocused);
-      window.removeEventListener("storage", onVisibleOrFocused);
     };
   }, [isLoaded, user, refreshProfile]);
 
@@ -231,8 +222,6 @@ export default function JoinPage() {
       setMyColor(color);
       if (serverAvatarConfig) {
         setAvatarConfig(serverAvatarConfig);
-        localStorage.setItem("mix-master-avatar-config", JSON.stringify(serverAvatarConfig));
-        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
       } else {
         emitProfileUpdate(avatarConfigRef.current, serverName ?? name);
       }
@@ -289,7 +278,7 @@ export default function JoinPage() {
           setMiniBoard(board ?? []);
           if (myRank  != null) setWeeklyRank(myRank);
           if (myScore != null) setWeeklyScore(myScore);
-          setBoardCountdown(30);
+          setBoardCountdown(10);
         })
         .catch(() => {});
     };
@@ -376,13 +365,13 @@ export default function JoinPage() {
           setMiniBoard(board ?? []);
           if (myRank  != null) setWeeklyRank(myRank);
           if (myScore != null) setWeeklyScore(myScore);
-          setBoardCountdown(30);
+          setBoardCountdown(10);
         })
         .catch(() => {});
     };
 
     fetchBoard();
-    const pollId      = setInterval(fetchBoard, 30_000);
+    const pollId      = setInterval(fetchBoard, 10_000);
     const countdownId = setInterval(() => setBoardCountdown(c => Math.max(0, c - 1)), 1_000);
 
     return () => {

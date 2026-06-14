@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlayer, saveGameSession } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function authorized(req: NextRequest): boolean {
   return req.headers.get("x-api-secret") === process.env.GAME_API_SECRET;
 }
@@ -36,7 +39,10 @@ export async function POST(req: NextRequest) {
   try {
     await saveGameSession(player.id, score);
     console.log(`[score] Saved successfully for player=${player.id}`);
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+    );
   } catch (err) {
     console.error("[score] saveGameSession error:", err);
     return NextResponse.json({ error: "DB error" }, { status: 500 });

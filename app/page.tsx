@@ -3,6 +3,9 @@ import Link from "next/link";
 import WeeklyChampion from "@/components/WeeklyChampion";
 import { getLatestChampion, getWeeklyLeaderboard } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function LandingPage() {
   const [champion, board] = await Promise.all([
     getLatestChampion().catch(() => null),
