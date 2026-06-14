@@ -50,6 +50,8 @@ export default function EditAvatarPage() {
         body:    JSON.stringify({ username: username.trim(), avatar_config: config }),
       });
       if (!res.ok) throw new Error("Save failed");
+      localStorage.setItem("mix-master-avatar-config", JSON.stringify(config));
+      localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
       router.refresh();
       router.replace(`/join?avatarUpdated=${Date.now()}`);
     } catch {

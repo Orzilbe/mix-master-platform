@@ -34,6 +34,7 @@ export default function JoinPage() {
   const { user, isLoaded } = useUser();
   const { signOut } = useClerk();
   const router              = useRouter();
+  const name                = user?.username ?? user?.firstName ?? "Player";
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const [profileReady, setProfileReady] = useState(false);
@@ -75,39 +76,85 @@ export default function JoinPage() {
   const phaseRef     = useRef<Phase>("joining");
   phaseRef.current   = phase;
 
+  const emitProfileUpdate = useCallback((cfg: AvatarConfig, username: string) => {
+    if (!user || !socketRef.current?.connected) return;
+    socketRef.current.emit("lobby-profile-update", {
+      userId:       user.id,
+      username,
+      avatarUrl:    user.imageUrl ?? null,
+      avatarConfig: cfg,
+    });
+  }, [user]);
+
+  const refreshProfile = useCallback(async () => {
+    if (!isLoaded || !user) return;
+
+    try {
+      const res = await fetch(`/api/profile/me?ts=${Date.now()}`, { cache: "no-store" });
+      const { player, weeklyRank: wr, weeklyScore: ws } = await res.json();
+      const name = (player?.username || user.username || user.firstName || "Player") as string;
+
+      if (!player?.avatar_config) {
+        await fetch("/api/profile/save", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ username: name, avatar_config: DEFAULT_AVATAR }),
+        }).catch(() => {});
+
+        setAvatarConfig(DEFAULT_AVATAR);
+        localStorage.setItem("mix-master-avatar-config", JSON.stringify(DEFAULT_AVATAR));
+        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
+        emitProfileUpdate(DEFAULT_AVATAR, name);
+      } else {
+        const cfg = player.avatar_config as AvatarConfig;
+        setAvatarConfig(cfg);
+        localStorage.setItem("mix-master-avatar-config", JSON.stringify(cfg));
+        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
+        emitProfileUpdate(cfg, name);
+      }
+
+      setWeeklyRank(wr ?? null);
+      setWeeklyScore(ws ?? 0);
+      setProfileReady(true);
+    } catch {
+      try {
+        const cached = localStorage.getItem("mix-master-avatar-config");
+        if (cached) setAvatarConfig(JSON.parse(cached) as AvatarConfig);
+      } catch { /* ignore cache parse errors */ }
+      setProfileReady(true);
+    }
+  }, [emitProfileUpdate, isLoaded, user]);
+
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (isLoaded && !user) router.replace("/login");
   }, [isLoaded, user, router]);
 
-  // ── Profile check — redirect to /setup-profile if avatar not configured ──
+  // ── Profile check — always fetch fresh so avatar edits do not need hard refresh ──
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    refreshProfile();
+  }, [isLoaded, user, refreshProfile]);
+
+  // When returning from the avatar/profile page or another tab changes the avatar,
+  // refresh and push the latest config into the live game-server socket.
   useEffect(() => {
     if (!isLoaded || !user) return;
 
-    fetch(`/api/profile/me?ts=${Date.now()}`, { cache: "no-store" })
-      .then(r => r.json())
-      .then(async ({ player, weeklyRank: wr, weeklyScore: ws }) => {
-        if (!player?.avatar_config) {
-          // No avatar saved yet — write DEFAULT_AVATAR so every player always has a color
-          const name = (player?.username || user?.username || user?.firstName || "Player") as string;
-          await fetch("/api/profile/save", {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ username: name, avatar_config: DEFAULT_AVATAR }),
-          }).catch(() => {});
-          setAvatarConfig(DEFAULT_AVATAR);
-          setWeeklyRank(wr ?? null);
-          setWeeklyScore(ws ?? 0);
-          setProfileReady(true);
-          return;
-        }
-        setAvatarConfig(player.avatar_config as AvatarConfig);
-        setWeeklyRank(wr ?? null);
-        setWeeklyScore(ws ?? 0);
-        setProfileReady(true);
-      })
-      .catch(() => setProfileReady(true));
-  }, [isLoaded, user, router]);
+    const onVisibleOrFocused = () => {
+      if (document.visibilityState === "visible") refreshProfile();
+    };
+
+    window.addEventListener("focus", onVisibleOrFocused);
+    document.addEventListener("visibilitychange", onVisibleOrFocused);
+    window.addEventListener("storage", onVisibleOrFocused);
+
+    return () => {
+      window.removeEventListener("focus", onVisibleOrFocused);
+      document.removeEventListener("visibilitychange", onVisibleOrFocused);
+      window.removeEventListener("storage", onVisibleOrFocused);
+    };
+  }, [isLoaded, user, refreshProfile]);
 
   // Phase 1: health check
   useEffect(() => {
@@ -174,9 +221,16 @@ export default function JoinPage() {
     socket.on("connect",       emitJoin);
     socket.on("connect_error", () => setServerState("failed"));
 
-    socket.on("lobby-join-ack", ({ slotId, color }: { slotId: number; color: string }) => {
+    socket.on("lobby-join-ack", ({ slotId, color, username: serverName, avatarConfig: serverAvatarConfig }: { slotId: number; color: string; username?: string; avatarConfig?: AvatarConfig | null }) => {
       mySlotRef.current = slotId;
       setMyColor(color);
+      if (serverAvatarConfig) {
+        setAvatarConfig(serverAvatarConfig);
+        localStorage.setItem("mix-master-avatar-config", JSON.stringify(serverAvatarConfig));
+        localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
+      } else {
+        emitProfileUpdate(avatarConfigRef.current, serverName ?? name);
+      }
       setLiveScores([]);
       setGameEnding(false);
       setWinner(null);
@@ -202,6 +256,7 @@ export default function JoinPage() {
     socket.on("promoted-to-player", ({ slotId, color }: { slotId: number; color: string }) => {
       mySlotRef.current = slotId;
       setMyColor(color);
+      emitProfileUpdate(avatarConfigRef.current, name);
       setLiveScores([]);
       setGameEnding(false);
       setWinner(null);
@@ -273,7 +328,7 @@ export default function JoinPage() {
       socket.disconnect();
       if (respawnTimer.current) clearInterval(respawnTimer.current);
     };
-  }, [isLoaded, user, serverState]);
+  }, [emitProfileUpdate, isLoaded, name, router, serverState, user]);
 
   // ── Mini-leaderboard polling (Mode A only) ───────────────────────────────
   useEffect(() => {
@@ -310,8 +365,6 @@ export default function JoinPage() {
 
   /* ── Render ────────────────────────────────────────────────────────────── */
   if (!isLoaded || !user || !profileReady) return <Centered><Spinner /></Centered>;
-
-  const name = user.username ?? user.firstName ?? "Player";
 
   // Server loading states
   if (serverState === "checking") {
@@ -765,11 +818,12 @@ function ResultsCard({
             {title}
           </p>
           {winner && (
-            <div
-              className="inline-flex mt-3 px-5 py-2 rounded-full border font-boogaloo text-2xl"
-              style={{ color: accent, borderColor: `${accent}77`, background: `${accent}12` }}
-            >
-              {winner.name} won the wall!
+            <div className="mt-3" style={{ color: accent }}>
+              <p className="font-boogaloo text-white/45 text-xs uppercase tracking-[0.35em]">Winner</p>
+              <p className="font-marker text-5xl leading-tight" style={{ textShadow: `0 0 18px ${accent}66` }}>
+                {winner.name}
+              </p>
+              <p className="font-boogaloo text-white/60 text-lg -mt-1">won the wall!</p>
             </div>
           )}
           {subtitle && <p className="font-boogaloo text-white/45 text-sm mt-2">{subtitle}</p>}
@@ -784,7 +838,7 @@ function ResultsCard({
               boxShadow: `0 0 24px ${topScore.color}22`,
             }}
           >
-            <div className="absolute inset-y-0 left-0 opacity-15 origin-left" style={{ width: `${Math.max(0, Math.min(100, Number(topScore.pct) || 0))}%`, background: topScore.color, animation: "phone-score-fill 850ms ease-out 160ms both" }} />
+            <div className="absolute inset-y-0 left-0 origin-left" style={{ width: `${Math.max(0, Math.min(100, Number(topScore.pct) || 0))}%`, background: topScore.color, opacity: 0.15, animation: "phone-score-fill 850ms ease-out 160ms both" }} />
             <div className="relative">
               <p className="font-marker text-6xl leading-none" style={{ color: topScore.color, textShadow: `0 0 18px ${topScore.color}66` }}>
                 {topScore.pct}%
@@ -826,7 +880,7 @@ function ResultsCard({
                     animation: `phone-score-row 360ms ease-out ${index * 80 + 120}ms both`,
                   }}
                 >
-                  <div className="absolute inset-y-0 left-0 opacity-16 origin-left" style={{ width: `${pct}%`, background: p.color, animation: `phone-score-fill 780ms ease-out ${index * 90 + 220}ms both` }} />
+                  <div className="absolute inset-y-0 left-0 origin-left" style={{ width: `${pct}%`, background: p.color, opacity: 0.16, animation: `phone-score-fill 780ms ease-out ${index * 90 + 220}ms both` }} />
                   <div className="relative flex items-center gap-3">
                     <span
                       className="font-marker text-sm w-7 text-center flex-shrink-0"

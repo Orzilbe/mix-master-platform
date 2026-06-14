@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { PlayerAvatar, DEFAULT_AVATAR } from "@/components/PlayerAvatar";
 import { GraffitiAnimation } from "@/components/GraffitiAnimation";
@@ -51,45 +51,39 @@ function FireworksLayer() {
         { left: "72%", top: "72%", color: "#FF6D00", delay: "760ms" },
         { left: "50%", top: "12%", color: "#FFD600", delay: "1040ms" },
     ];
-    const rays = Array.from({ length: 14 }, (_, i) => i);
+    const rays = Array.from({ length: 16 }, (_, i) => i);
 
     return (
-        <>
+        <div className="tv-fireworks" aria-hidden="true">
             {bursts.map((burst, burstIndex) => (
                 <div
                     key={`${burst.left}-${burst.top}`}
-                    className="absolute w-2 h-2 rounded-full"
+                    className="tv-firework"
                     style={{
                         left: burst.left,
                         top: burst.top,
-                        background: burst.color,
-                        boxShadow: `0 0 18px ${burst.color}`,
-                        animation: `firework-burst 1.7s ease-out ${burst.delay} infinite`,
-                    }}
+                        animationDelay: burst.delay,
+                        ["--c" as string]: burst.color,
+                    } as CSSProperties}
                 >
-                    {rays.map((ray) => {
-                        const angle = (Math.PI * 2 * ray) / rays.length;
-                        const dist = 62 + ((ray + burstIndex) % 4) * 12;
-                        return (
-                            <span
-                                key={ray}
-                                className="absolute left-1/2 top-1/2 w-2 h-2 rounded-full"
-                                style={{
-                                    background: burst.color,
-                                    boxShadow: `0 0 12px ${burst.color}`,
-                                    transform: "translate(-50%, -50%)",
-                                    ['--tx' as string]: `${Math.cos(angle) * dist}px`,
-                                    ['--ty' as string]: `${Math.sin(angle) * dist}px`,
-                                    animation: `firework-dot 1.7s ease-out ${burst.delay} infinite`,
-                                }}
-                            />
-                        );
-                    })}
+                    {rays.map((ray) => (
+                        <span
+                            key={ray}
+                            className="tv-firework-spark"
+                            style={{
+                                animationDelay: burst.delay,
+                                ["--angle" as string]: `${(360 / rays.length) * ray}deg`,
+                                ["--distance" as string]: `${72 + ((ray + burstIndex) % 5) * 12}px`,
+                                ["--c" as string]: burst.color,
+                            } as CSSProperties}
+                        />
+                    ))}
                 </div>
             ))}
-        </>
+        </div>
     );
 }
+
 
 
 export default function DisplayPage() {
@@ -144,15 +138,15 @@ export default function DisplayPage() {
 
         socket.on("game-end", (data: { winner: any; scores: any[] }) => {
             setEndGameData(data);
-            // Let the results breathe, then reset the game server back into lobby so the TV START GAME button works again.
-            const resetDelay = window.setTimeout(() => {
-                socket.emit("play-again");
-                setPhase("lobby");
-                setEndGameData(null);
-                setSidebarExpanded(false);
-            }, 8000);
-            socket.once("game-start", () => window.clearTimeout(resetDelay));
+            setPhase("game");
         });
+
+        socket.on("lobby-reset", () => {
+            setPhase("lobby");
+            setEndGameData(null);
+            setSidebarExpanded(false);
+        });
+
         return () => { socket.disconnect(); };
     }, []);
 
@@ -303,15 +297,44 @@ export default function DisplayPage() {
                     0% { transform: scaleX(0); }
                     100% { transform: scaleX(1); }
                 }
-                @keyframes firework-burst {
-                    0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
-                    12% { opacity: 1; }
-                    72% { opacity: .95; }
-                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+                .tv-fireworks {
+                    position: absolute;
+                    inset: 0;
+                    z-index: 1;
+                    pointer-events: none;
+                    overflow: hidden;
                 }
-                @keyframes firework-dot {
-                    0% { transform: translate(0, 0) scale(1); opacity: 1; }
-                    100% { transform: translate(var(--tx), var(--ty)) scale(0.15); opacity: 0; }
+                .tv-firework {
+                    position: absolute;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 9999px;
+                    background: var(--c);
+                    box-shadow: 0 0 26px var(--c), 0 0 70px var(--c);
+                    animation: tv-firework-core 1.75s ease-out infinite;
+                }
+                .tv-firework-spark {
+                    position: absolute;
+                    left: 50%;
+                    top: 50%;
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 9999px;
+                    background: var(--c);
+                    box-shadow: 0 0 18px var(--c);
+                    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(0) scale(1);
+                    animation: tv-firework-spark 1.75s ease-out infinite;
+                }
+                @keyframes tv-firework-core {
+                    0% { transform: translate(-50%, -50%) scale(.35); opacity: 0; }
+                    10% { opacity: 1; }
+                    78% { opacity: .85; }
+                    100% { transform: translate(-50%, -50%) scale(1.35); opacity: 0; }
+                }
+                @keyframes tv-firework-spark {
+                    0% { transform: translate(-50%, -50%) rotate(var(--angle)) translateX(0) scale(1); opacity: 1; }
+                    78% { opacity: .95; }
+                    100% { transform: translate(-50%, -50%) rotate(var(--angle)) translateX(var(--distance)) scale(.12); opacity: 0; }
                 }
                 @keyframes winner-pulse {
                     0%, 100% { transform: scale(1); }
@@ -334,8 +357,9 @@ export default function DisplayPage() {
                         {endGameData && (() => {
                             const topScore = endGameData.scores[0] ?? null;
                             return (
-                                <div className="absolute inset-0 z-50 bg-black/88 flex items-center justify-center animate-fade-in overflow-hidden">
-                                    <div className="absolute inset-0 pointer-events-none">
+                                <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in overflow-hidden"
+                                    style={{ background: "rgba(0,0,0,.88)" }}>
+                                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
                                         <div className="absolute inset-0 opacity-45" style={{ background: "radial-gradient(circle at center, rgba(255,255,255,0.08), transparent 50%)" }} />
                                         <FireworksLayer />
                                         <div className="absolute top-[12%] left-[15%] w-28 h-28 rounded-full blur-3xl opacity-35" style={{ background: "#FF2D78" }} />
@@ -345,7 +369,7 @@ export default function DisplayPage() {
                                     </div>
 
                                     <div
-                                        className="relative w-full max-w-3xl mx-8 rounded-[34px] border border-white/10 bg-[#0d0d0d]/92 shadow-[0_0_70px_rgba(0,0,0,0.55)] px-10 py-10 flex flex-col items-center gap-7"
+                                        className="relative z-10 w-full max-w-3xl mx-8 rounded-[34px] border border-white/10 bg-[#0d0d0d]/92 shadow-[0_0_70px_rgba(0,0,0,0.55)] px-10 py-10 flex flex-col items-center gap-7"
                                         style={{ animation: "result-card-pop 680ms cubic-bezier(.16,1,.3,1) both" }}
                                     >
                                         <div className="absolute -inset-px rounded-[34px] pointer-events-none opacity-70" style={{ background: "linear-gradient(135deg, rgba(255,45,120,.5), transparent 28%, rgba(0,229,255,.35) 68%, rgba(118,255,3,.35))", mask: "linear-gradient(#000,#000) content-box, linear-gradient(#000,#000)", WebkitMask: "linear-gradient(#000,#000) content-box, linear-gradient(#000,#000)", padding: 1, WebkitMaskComposite: "xor", maskComposite: "exclude" }} />
@@ -354,18 +378,20 @@ export default function DisplayPage() {
                                             <p className="font-marker text-7xl text-[#FF6D00] tracking-wider drop-shadow-[0_0_25px_#FF6D00]">
                                                 GAME OVER
                                             </p>
-                                            <div
-                                                className="inline-flex mt-4 px-8 py-3 rounded-full border-2 font-boogaloo text-4xl"
-                                                style={{
-                                                    color: endGameData.winner?.color ?? "#fff",
-                                                    borderColor: `${endGameData.winner?.color ?? "#fff"}88`,
-                                                    background: `${endGameData.winner?.color ?? "#ffffff"}14`,
-                                                    boxShadow: `0 0 28px ${endGameData.winner?.color ?? "#ffffff"}33`,
-                                                    animation: "winner-pulse 1.4s ease-in-out infinite",
-                                                }}
-                                            >
-                                                {endGameData.winner ? `${endGameData.winner.name} won the wall!` : "It's a draw!"}
-                                            </div>
+                                            {endGameData.winner ? (
+                                                <div className="mt-5" style={{ animation: "winner-pulse 1.4s ease-in-out infinite" }}>
+                                                    <p className="font-boogaloo text-white/45 text-2xl tracking-[0.35em] uppercase">Winner</p>
+                                                    <p
+                                                        className="font-marker text-8xl leading-tight mt-1"
+                                                        style={{ color: endGameData.winner.color ?? "#fff", textShadow: `0 0 34px ${endGameData.winner.color ?? "#ffffff"}88` }}
+                                                    >
+                                                        {endGameData.winner.name}
+                                                    </p>
+                                                    <p className="font-boogaloo text-white/70 text-3xl -mt-1">won the wall!</p>
+                                                </div>
+                                            ) : (
+                                                <p className="font-marker text-6xl text-white mt-5">It&apos;s a draw!</p>
+                                            )}
                                         </div>
 
                                         {topScore && (
@@ -388,7 +414,7 @@ export default function DisplayPage() {
                                                         className="relative overflow-hidden px-5 py-4 rounded-2xl bg-white/5 border border-white/10"
                                                         style={{ animation: `result-row-in 420ms ease-out ${index * 90 + 120}ms both` }}
                                                     >
-                                                        <div className="absolute inset-y-0 left-0 opacity-18 origin-left" style={{ width: `${pct}%`, background: p.color, animation: `result-bar-grow 900ms ease-out ${index * 110 + 260}ms both` }} />
+                                                        <div className="absolute inset-y-0 left-0 origin-left" style={{ width: `${pct}%`, background: p.color, opacity: 0.18, animation: `result-bar-grow 900ms ease-out ${index * 110 + 260}ms both` }} />
                                                         <div className="relative flex justify-between items-center gap-4">
                                                             <div className="flex items-center gap-4 min-w-0">
                                                                 <span className="font-marker text-xl w-10 text-center" style={{ color: index === 0 ? "#FFD600" : "rgba(255,255,255,0.45)" }}>
@@ -465,7 +491,7 @@ export default function DisplayPage() {
                                                 boxShadow: `0 0 16px ${p.color}44`,
                                             }}
                                         >
-                                            <PlayerAvatar config={{ ...(p.avatarConfig ?? DEFAULT_AVATAR), color: p.color }} size={60} />
+                                            <PlayerAvatar config={p.avatarConfig ?? { ...DEFAULT_AVATAR, color: p.color }} size={60} />
                                         </div>
                                         <span className="font-marker text-sm" style={{ color: p.color }}>{p.username}</span>
                                     </div>

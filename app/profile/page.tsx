@@ -85,6 +85,8 @@ export default function ProfilePage() {
       console.log('[profile] save() response:', res.status, body);
       if (!res.ok) throw new Error("Save failed");
       setSavedConfig(cfg);
+      localStorage.setItem("mix-master-avatar-config", JSON.stringify(cfg));
+      localStorage.setItem("mix-master-avatar-updated-at", String(Date.now()));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
